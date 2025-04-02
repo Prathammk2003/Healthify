@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Healthcare App
 
 A complete healthcare management solution featuring medication reminders, appointments, medical records, and notifications.
@@ -141,3 +142,6 @@ The notification scheduler runs automatically with the application, checking for
 - Sending daily health tips at 9 AM
 
 You can monitor scheduler activity in the server logs when running the application.
+=======
+# healthcare-app
+>>>>>>> d883d587a4c870ae7ea65e7ee5fe74773b62dfa1
