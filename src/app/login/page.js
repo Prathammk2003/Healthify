@@ -15,6 +15,12 @@ export default function Login() {
     e.preventDefault();
     setError('');
 
+    // Basic validation
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      return;
+    }
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -45,7 +51,8 @@ export default function Login() {
         router.push('/dashboard/patient');
       }
     } catch (err) {
-      setError(`❌ ${err.message}`);
+      setError(`${err.message}`);
+      console.error('Login error:', err);
     }
   };
 

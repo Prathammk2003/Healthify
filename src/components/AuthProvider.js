@@ -22,20 +22,18 @@ export function AuthProvider({ children }) {
   });
 
   useEffect(() => {
-    // Check if we have auth data in localStorage
-    const token = localStorage.getItem('token');
-    const userId = localStorage.getItem('userId');
-    const role = localStorage.getItem('role');
-    const isAdmin = localStorage.getItem('isAdmin') === 'true';
+    // Check if we have auth data in localStorage or sessionStorage
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const userId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
+    const role = sessionStorage.getItem('role') || localStorage.getItem('role');
+    const isAdmin = sessionStorage.getItem('isAdmin') === 'true' || localStorage.getItem('isAdmin') === 'true';
     
     if (token && userId) {
       // Check if token is expired
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        console.log('Debug - Auth token payload:', payload);
         if (payload.exp * 1000 < Date.now()) {
           // Token is expired, clear auth data
-          console.log('Debug - Token expired, logging out');
           logout();
           return;
         }
@@ -45,7 +43,6 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      console.log('Debug - Setting auth state with isAdmin:', isAdmin);
       setAuthState({
         isAuthenticated: true,
         token,
@@ -56,46 +53,17 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // Add periodic session verification
-  useEffect(() => {
-    // Only check if user is logged in
-    if (!authState.isAuthenticated) return;
-
-    const checkActiveSession = async () => {
-      try {
-        // Check for active sessions flag by making a request to the API
-        const response = await fetch('/api/auth/session-check', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${authState.token}`
-          }
-        });
-        
-        if (!response.ok) {
-          console.log('Session check failed - logging out user');
-          logout();
-        }
-      } catch (error) {
-        console.log('Error checking session status - logging out user');
-        logout();
-      }
-    };
-
-    // Run the check immediately and then every 30 seconds
-    checkActiveSession();
-    const interval = setInterval(checkActiveSession, 30000);
-
-    return () => clearInterval(interval);
-  }, [authState.isAuthenticated, authState.token]);
+  // Removing the periodic session verification that could be causing issues
+  // We'll rely on JWT expiration instead
 
   const login = (userData) => {
     const { token, userId, role, isAdmin } = userData;
     
-    // Save to localStorage
-    localStorage.setItem('token', token);
-    localStorage.setItem('userId', userId);
-    if (role) localStorage.setItem('role', role);
-    localStorage.setItem('isAdmin', isAdmin ? 'true' : 'false');
+    // Save to sessionStorage instead of localStorage for better security
+    sessionStorage.setItem('token', token);
+    sessionStorage.setItem('userId', userId);
+    if (role) sessionStorage.setItem('role', role);
+    sessionStorage.setItem('isAdmin', isAdmin ? 'true' : 'false');
     
     // Update state
     setAuthState({
@@ -108,11 +76,16 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    // Clear localStorage
+    // Clear localStorage and sessionStorage
     localStorage.removeItem('token');
     localStorage.removeItem('userId');
     localStorage.removeItem('role');
     localStorage.removeItem('isAdmin');
+    
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('userId');
+    sessionStorage.removeItem('role');
+    sessionStorage.removeItem('isAdmin');
     
     // Update state
     setAuthState({
