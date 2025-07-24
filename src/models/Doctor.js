@@ -1,4 +1,8 @@
 import mongoose from 'mongoose';
+import { DOCTOR_SPECIALIZATIONS } from '../constants/specializations.mjs';
+
+// Define available specializations using imported constant
+const SPECIALIZATIONS = DOCTOR_SPECIALIZATIONS;
 
 const DoctorSchema = new mongoose.Schema({
   userId: { 
@@ -22,7 +26,28 @@ const DoctorSchema = new mongoose.Schema({
       message: props => `${props.value} is not a valid ObjectId!`
     }
   }],
-  specialization: { type: String },
+  specialization: { 
+    type: String, 
+    enum: SPECIALIZATIONS,
+    default: 'General Physician'
+  },
+  secondarySpecializations: [{
+    type: String,
+    enum: SPECIALIZATIONS
+  }],
+  qualifications: {
+    type: String,
+    default: ''
+  },
+  yearsOfExperience: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  bio: {
+    type: String,
+    default: ''
+  },
   availability: [{
     day: { type: String },
     startTime: { type: String },
@@ -31,4 +56,8 @@ const DoctorSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Doctor = mongoose.models.Doctor || mongoose.model('Doctor', DoctorSchema);
+
+// Export the specializations list so it can be used elsewhere
+export const DoctorSpecializations = SPECIALIZATIONS;
+
 export default Doctor;

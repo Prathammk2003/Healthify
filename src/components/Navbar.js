@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Calendar, 
   User, 
@@ -23,14 +23,29 @@ import { useState, useEffect } from 'react';
 const Navbar = () => {
   const { isAuthenticated, userId, role, isAdmin, logout } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Don't show navbar on landing page or dashboard pages to avoid duplication
+  if (pathname === '/' || pathname === '/login' || pathname === '/register' || pathname?.startsWith('/dashboard')) {
+    return null;
+  }
 
   const isActive = (path) => {
     return pathname === path || pathname.startsWith(`${path}/`);
   };
 
-  const handleLogout = () => {
-    logout();
-    window.location.href = '/login';
+  const handleLogout = async () => {
+    try {
+      // Call the logout function from AuthProvider
+      await logout();
+      
+      // Use router for navigation instead of direct window.location change
+      router.push('/login');
+    } catch (error) {
+      console.error('Error during logout:', error);
+      // Still attempt to redirect even if there was an error during logout
+      router.push('/login');
+    }
   };
 
   const getDashboardLink = () => {

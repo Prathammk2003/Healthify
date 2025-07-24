@@ -65,244 +65,117 @@ export async function POST(request) {
   }
 }
 
-async function generateAIRecommendation(data) {
-  const { mood, stressLevel, sleepHours, anxiety, depression, energyLevel, concentration, socialInteraction, selfEsteem, thoughts } = data;
-  
-  const prompt = `As a mental health AI assistant, provide a structured, concise response based on the following user data:
-  - Current mood: ${mood}
-  - Stress level (0-10): ${stressLevel}
-  - Sleep hours: ${sleepHours}
-  - Anxiety level (0-10): ${anxiety || 'Not provided'}
-  - Depression level (0-10): ${depression || 'Not provided'}
-  - Energy level (0-10): ${energyLevel || 'Not provided'}
-  - Concentration level (0-10): ${concentration || 'Not provided'}
-  - Social interaction level (0-10): ${socialInteraction || 'Not provided'}
-  - Self-esteem level (0-10): ${selfEsteem || 'Not provided'}
-  - Additional thoughts: ${thoughts || 'None provided'}
-
-  IMPORTANT: Your response MUST follow this exact format:
-
-  **Analysis:**
-  • Brief point about their current mental state
-  • Second point if relevant
-  
-  **Recommendations:**
-  • First specific action item (should be short and clear)
-  • Second specific action item
-  • Third specific action item
-  • Fourth specific action item if needed
-  
-  **Support:**
-  • Brief supportive message with encouragement
-  
-  Use bullet points exactly as shown above. Keep each point brief and direct, no longer than one sentence. Do not use paragraphs.`;
-
+async function generateAIRecommendation(userData) {
   try {
-    // Using Hugging Face's text generation API
+    // Special case for happy mood with low stress
+    if (userData.mood === 'Happy' && userData.stressLevel <= 3) {
+      return `• You're in a positive state with low stress levels - this is wonderful!
+• Your happiness combined with low stress creates an optimal mental state.
+• This is a good time to engage in activities that bring you joy and fulfillment.
+• Consider journaling about what's going well to reference during more difficult times.
+• Maintain your self-care routines that are working effectively for you.
+• Share your positive energy with others who might benefit from your support.`;
+    }
+
+    const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+    
+    const sleepAssessment = userData.sleepHours < 6 
+      ? "significantly below recommended levels" 
+      : userData.sleepHours < 8 
+        ? "slightly below optimal levels" 
+        : "at healthy levels";
+
+    // Create a more detailed prompt
+    const prompt = `You are a mental health expert providing personalized insights based on a user's mental health check-in data.
+
+User's check-in data:
+- Mood: ${userData.mood}
+- Stress level (0-10): ${userData.stressLevel}
+- Hours of sleep: ${userData.sleepHours} (${sleepAssessment})
+- Anxiety level (0-10): ${userData.anxiety}
+${userData.thoughts ? `- Additional thoughts: ${userData.thoughts}` : ''}
+
+Based on this data, provide a brief, empathetic response with insights and practical recommendations.
+Your response should have 4-6 bullet points, each starting with a bullet point character "•".
+Do not include any section headings like "Analysis" or "Recommendations" - just provide the bullet points directly.
+
+Format each point to be concise, compassionate, and actionable. The first 1-2 points should acknowledge their current state,
+the next 2-3 points should provide practical suggestions, and the final point should be encouraging.`;
+
     const result = await hf.textGeneration({
-      model: "mistralai/Mistral-7B-Instruct-v0.2",
-      inputs: `<s>[INST] ${prompt} [/INST]</s>`,
+      model: 'mistralai/Mistral-7B-Instruct-v0.2',
+      inputs: prompt,
       parameters: {
-        max_new_tokens: 500,
+        max_new_tokens: 512,
         temperature: 0.7,
         top_p: 0.95,
-        repetition_penalty: 1.15
+        repetition_penalty: 1.1
       }
     });
     
-    // Extract and clean the response
-    let response = result.generated_text;
+    let response = result.generated_text || '';
     
-    // Remove the prompt from the response if it's included
-    if (response.includes(prompt)) {
-      response = response.replace(prompt, '').trim();
-    }
+    // Extract just the bullet points from the response
+    const bulletPoints = response.split('\n')
+      .filter(line => line.trim().startsWith('•'))
+      .join('\n');
     
-    if (response.includes('[/INST]')) {
-      response = response.split('[/INST]')[1].trim();
-    }
-    
-    // Remove any residual system instructions that might be in the response
-    if (response.includes('</s>')) {
-      response = response.split('</s>')[1] || response.replace('</s>', '');
-    }
-    
-    // If the response doesn't follow the required format, force the format
-    if (!response.includes('**Analysis:**') || !response.includes('**Recommendations:**') || !response.includes('**Support:**')) {
-      // Extract what we can from the response
-      const sections = response.split(/\n+/);
-      const analysisParts = [];
-      const recommendationParts = [];
-      const supportParts = [];
-      
-      // Try to classify each section
-      let currentSection = "Analysis";
-      for (const section of sections) {
-        const trimmedSection = section.trim();
-        
-        if (trimmedSection.toLowerCase().includes('analysis')) {
-          currentSection = "Analysis";
-          continue;
-        } else if (trimmedSection.toLowerCase().includes('recommendation')) {
-          currentSection = "Recommendations";
-          continue;
-        } else if (trimmedSection.toLowerCase().includes('support') || 
-                  trimmedSection.toLowerCase().includes('closing') ||
-                  trimmedSection.toLowerCase().includes('remember')) {
-          currentSection = "Support";
-          continue;
-        }
-        
-        if (trimmedSection.length > 5) {
-          // Remove any numbering or dashes at the beginning
-          let point = trimmedSection.replace(/^[•\-\d\.\s]+/, '').trim();
-          
-          // Add bullet points if they don't exist
-          if (!point.startsWith('•')) {
-            point = '• ' + point;
-          }
-          
-          if (currentSection === "Analysis") {
-            analysisParts.push(point);
-          } else if (currentSection === "Recommendations") {
-            recommendationParts.push(point);
-          } else if (currentSection === "Support") {
-            supportParts.push(point);
-          }
-        }
-      }
-      
-      // Ensure we have at least one point in each section
-      if (analysisParts.length === 0) {
-        if (mood === 'Happy' || mood === 'Content') {
-          analysisParts.push("• Your mood is positive today, which is great to see!");
-        } else if (mood === 'Neutral') {
-          analysisParts.push("• You're feeling neutral today, which is a good baseline.");
-        } else if (mood === 'Anxious' || mood === 'Stressed') {
-          analysisParts.push("• You're experiencing anxiety or stress today, which is common.");
-        } else if (mood === 'Sad') {
-          analysisParts.push("• You're feeling sad today, it's important to acknowledge these emotions.");
-        }
-        
-        if (stressLevel >= 7) {
-          analysisParts.push("• Your stress level is high at " + stressLevel + "/10.");
-        }
-      }
-      
-      if (recommendationParts.length === 0) {
-        recommendationParts.push("• Practice deep breathing exercises for 5 minutes.");
-        recommendationParts.push("• Take short breaks throughout your day.");
-        recommendationParts.push("• Engage in physical activity like walking or stretching.");
-      }
-      
-      if (supportParts.length === 0) {
-        supportParts.push("• Remember that it's okay to ask for help when needed, small steps make a big difference.");
-      }
-      
-      // Rebuild the response with proper formatting
-      response = `**Analysis:**
-${analysisParts.join('\n')}
-
-**Recommendations:**
-${recommendationParts.join('\n')}
-
-**Support:**
-${supportParts.join('\n')}`;
-    }
-    
-    // Ensure each part has bullet points
-    response = response.replace(/\*\*Analysis:\*\*\s*\n(?!•)/g, '**Analysis:**\n• ')
-                     .replace(/\*\*Recommendations:\*\*\s*\n(?!•)/g, '**Recommendations:**\n• ')
-                     .replace(/\*\*Support:\*\*\s*\n(?!•)/g, '**Support:**\n• ');
-    
-    // Replace any number lists (1., 2., etc.) with bullet points
-    response = response.replace(/^\s*\d+\.\s*/gm, '• ');
-    
-    // Join consecutive bullet points that may have been split across lines
-    response = response.replace(/•\s*([^•\n]+)\n(?!•|\*\*|$)/g, '• $1 ');
-    
-    return response.trim();
+    return bulletPoints || generateFallbackRecommendation(userData);
   } catch (error) {
-    console.error('Error generating AI recommendation with Hugging Face:', error);
-    throw error;
+    console.error('Error generating AI recommendation:', error);
+    return generateFallbackRecommendation(userData);
   }
 }
 
-function generateFallbackRecommendation(data) {
-  const { mood, stressLevel, sleepHours, anxiety, depression, energyLevel } = data;
-  
-  // Create array to store recommendations
-  let analysis = [];
-  let recommendations = [];
-  
-  // General analysis based on mood
-  if (mood === 'Happy' || mood === 'Content') {
-    analysis.push("Your mood is positive today, which is great to see!");
-  } else if (mood === 'Neutral') {
-    analysis.push("You're feeling neutral today. This is a good baseline.");
-  } else if (mood === 'Anxious' || mood === 'Stressed') {
-    analysis.push("You're experiencing some anxiety or stress today. This is common and there are ways to help manage these feelings.");
-  } else if (mood === 'Sad') {
-    analysis.push("You're feeling sad today. It's important to acknowledge these emotions and find healthy ways to process them.");
-  }
+function generateFallbackRecommendation(userData) {
+  const recommendations = {
+    'Happy': `• It's great that you're feeling happy today!
+• Your positive mood is a wonderful foundation for well-being.
+• Try to note what contributed to this positive state.
+• Consider activities that maintain this mood, like connecting with loved ones.
+• Remember these feelings during more challenging times.
+• Your happiness can positively impact those around you.`,
 
-  // Sleep recommendations
-  if (sleepHours < 6) {
-    analysis.push("Your sleep hours are below the recommended range.");
-    recommendations.push("Try to establish a consistent sleep schedule. Aim for 7-9 hours per night.");
-    recommendations.push("Create a relaxing bedtime routine without screens 1 hour before sleep.");
-  } else if (sleepHours >= 6 && sleepHours <= 9) {
-    analysis.push("Your sleep duration is within a healthy range.");
-  } else if (sleepHours > 9) {
-    analysis.push("You're sleeping more than average, which could indicate fatigue or other issues.");
-    recommendations.push("While adequate sleep is important, excessive sleep can sometimes be linked to depression or other health concerns. Consider discussing this with a healthcare provider.");
-  }
+    'Content': `• Being content is a wonderful state of balance and satisfaction.
+• This equilibrium helps build resilience for more challenging times.
+• Consider journaling about what's contributing to your contentment.
+• Gentle exercise like walking can help maintain this peaceful state.
+• Practice gratitude to reinforce these positive feelings.
+• Your contentment creates space for deeper reflection and growth.`,
 
-  // Stress level recommendations
-  if (stressLevel >= 7) {
-    analysis.push("Your stress level is high.");
-    recommendations.push("Practice deep breathing exercises or meditation for 10 minutes each day.");
-    recommendations.push("Consider taking short breaks throughout the day to reset your mind.");
-    recommendations.push("Physical activity can help reduce stress - even a short walk can make a difference.");
-  } else if (stressLevel >= 4 && stressLevel <= 6) {
-    analysis.push("You're experiencing moderate stress levels.");
-    recommendations.push("Practice mindfulness or relaxation techniques to help manage day-to-day stress.");
-  }
+    'Neutral': `• A neutral mood provides a balanced foundation for your day.
+• This emotional state allows for clear thinking and decision-making.
+• Consider gentle movement or nature time to potentially elevate your mood.
+• Mindfulness practices can help you connect more deeply with your emotions.
+• This is a good time for productive work requiring focus.
+• Remember that all emotional states, including neutral ones, are valid.`,
 
-  // Anxiety recommendations
-  if (anxiety && anxiety >= 7) {
-    analysis.push("Your anxiety level is elevated.");
-    recommendations.push("Try grounding exercises when feeling anxious (5-4-3-2-1 technique: identify 5 things you see, 4 things you feel, 3 things you hear, 2 things you smell, and 1 thing you taste).");
-    recommendations.push("Consider limiting caffeine and alcohol which can worsen anxiety.");
-  }
+    'Anxious': `• I notice you're feeling anxious today - thank you for sharing this.
+• Anxiety is often our body's response to perceived threats or uncertainties.
+• Try some deep breathing exercises - inhale for 4 counts, hold for 2, exhale for 6.
+• Grounding techniques like naming 5 things you can see, 4 you can touch, etc. may help.
+• Consider limiting caffeine and prioritizing rest today.
+• Remember that anxiety, while uncomfortable, is temporary and will pass.`,
 
-  // Depression recommendations
-  if (depression && depression >= 7) {
-    analysis.push("You're reporting significant feelings of depression.");
-    recommendations.push("Try to engage in one small enjoyable activity each day.");
-    recommendations.push("Reaching out to a friend or family member can provide important social connection.");
-    recommendations.push("Consider speaking with a mental health professional who can provide appropriate support.");
-  }
+    'Sad': `• I'm sorry to hear you're feeling sad today - your feelings are valid.
+• Sadness is a natural emotion that helps us process difficult experiences.
+• Be gentle with yourself today and prioritize self-compassion.
+• Small acts of self-care like a warm shower or favorite tea can provide comfort.
+• Consider reaching out to a trusted friend or family member for support.
+• Remember that emotions fluctuate, and this feeling will not last forever.`,
 
-  // If no specific recommendations were generated
-  if (recommendations.length === 0) {
-    recommendations.push("Continue monitoring your mental health and practicing self-care routines.");
-    recommendations.push("Engage in activities that bring you joy and fulfillment.");
-    recommendations.push("Maintain social connections and don't hesitate to reach out to others.");
-  }
+    'Stressed': `• I see you're feeling stressed - acknowledging this is an important first step.
+• Stress often signals we're carrying too much or need different resources.
+• Try progressive muscle relaxation by tensing and releasing each muscle group.
+• Breaking tasks into smaller steps can make challenges feel more manageable.
+• Prioritize at least 10 minutes of uninterrupted relaxation today.
+• Your body and mind deserve care, especially during stressful periods.`
+  };
 
-  // Format the response
-  const analysisText = analysis.join(" ");
-  const recommendationsText = recommendations.map(rec => `• ${rec}`).join("\n");
-  
-  const supportMessage = "Remember that your mental health is important, and it's okay to seek professional help if you're struggling. Small, consistent steps can make a significant difference in your wellbeing.";
-
-  return `**Analysis:**
-${analysisText}
-
-**Recommendations:**
-${recommendationsText}
-
-**Support:**
-${supportMessage}`;
+  return recommendations[userData.mood] || `• Thank you for checking in about your mental health today.
+• Tracking your emotional state is an important part of self-care.
+• Consider taking some time for a relaxing activity you enjoy.
+• Gentle movement like stretching can help release tension in your body.
+• Staying hydrated and well-nourished supports emotional wellbeing.
+• Remember that all emotions provide valuable information and will evolve over time.`;
 }

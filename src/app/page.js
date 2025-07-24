@@ -1,6 +1,15 @@
 export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 text-white">
+      {/* Simple Logo Header */}
+      <header className="absolute top-0 left-0 right-0 px-4 py-4 z-10">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            Healthify
+          </div>
+        </div>
+      </header>
+      
       {/* Hero Section */}
       <div className="min-h-[80vh] flex flex-col items-center justify-center text-center px-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />

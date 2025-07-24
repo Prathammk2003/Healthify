@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { PillIcon, Plus, Edit2, Trash2, Bell, AlertTriangle } from 'lucide-react';
+import { PillIcon, Plus, Edit2, Trash2, Bell, Phone, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui';
 import Loader from '@/components/Loader';
 
 export default function MedicationsPage() {
-  const { isAuthenticated, token } = useAuth();
+  const { isAuthenticated, verifyToken } = useAuth();
   const [medications, setMedications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,29 +18,53 @@ export default function MedicationsPage() {
     dosage: '',
     frequency: 'Daily',
     time: '',
+    times: ['', ''], // For twice daily option
+    daysOfWeek: [], // For weekly option
+    daysOfMonth: [], // For monthly option
     notes: '',
+    enableVoiceCall: false,
   });
 
   useEffect(() => {
-    if (isAuthenticated && token) {
+    if (isAuthenticated) {
       fetchMedications();
+    } else {
+      setLoading(false);
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated]);
 
   const fetchMedications = async () => {
     try {
+      setLoading(true);
+      setError(null);
+      
+      // Verify token before making the request
+      if (!verifyToken()) {
+        setError('Your session has expired. Please log in again.');
+        setLoading(false);
+        return;
+      }
+      
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+      
       const response = await fetch('/api/medications', {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
       
+      if (response.status === 401) {
+        setError('Your session has expired. Please log in again.');
+        setLoading(false);
+        return;
+      }
+      
       if (!response.ok) {
         throw new Error('Failed to fetch medications');
       }
       
       const data = await response.json();
-      setMedications(data.medications);
+      setMedications(data.medications || []);
     } catch (err) {
       console.error('Error fetching medications:', err);
       setError(err.message);
@@ -52,11 +76,27 @@ export default function MedicationsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Verify token before making the request
+      if (!verifyToken()) {
+        setError('Your session has expired. Please log in again.');
+        return;
+      }
+      
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
       const url = editingMedication 
-        ? `/api/medications/${editingMedication._id}`
+        ? `/api/medications`
         : '/api/medications';
       
       console.log('Sending medication data:', formData);
+      
+      const payload = {
+        ...formData
+      };
+      
+      // If editing, add the id
+      if (editingMedication) {
+        payload.id = editingMedication._id;
+      }
       
       const response = await fetch(url, {
         method: editingMedication ? 'PUT' : 'POST',
@@ -64,8 +104,13 @@ export default function MedicationsPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
+
+      if (response.status === 401) {
+        setError('Your session has expired. Please log in again.');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error('Failed to save medication');
@@ -77,7 +122,11 @@ export default function MedicationsPage() {
         dosage: '',
         frequency: 'Daily',
         time: '',
+        times: ['', ''],
+        daysOfWeek: [],
+        daysOfMonth: [],
         notes: '',
+        enableVoiceCall: false,
       });
       setShowAddModal(false);
       setEditingMedication(null);
@@ -94,12 +143,24 @@ export default function MedicationsPage() {
     }
 
     try {
-      const response = await fetch(`/api/medications/${medicationId}`, {
+      // Verify token before making the request
+      if (!verifyToken()) {
+        setError('Your session has expired. Please log in again.');
+        return;
+      }
+      
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+      const response = await fetch(`/api/medications?id=${medicationId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
+
+      if (response.status === 401) {
+        setError('Your session has expired. Please log in again.');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error('Failed to delete medication');
@@ -119,7 +180,11 @@ export default function MedicationsPage() {
       dosage: medication.dosage,
       frequency: medication.frequency,
       time: medication.time,
+      times: medication.times || ['', ''],
+      daysOfWeek: medication.daysOfWeek || [],
+      daysOfMonth: medication.daysOfMonth || [],
       notes: medication.notes || '',
+      enableVoiceCall: medication.enableVoiceCall || false,
     });
     setShowAddModal(true);
   };
@@ -153,7 +218,11 @@ export default function MedicationsPage() {
               dosage: '',
               frequency: 'Daily',
               time: '',
+              times: ['', ''],
+              daysOfWeek: [],
+              daysOfMonth: [],
               notes: '',
+              enableVoiceCall: false,
             });
             setShowAddModal(true);
           }}
@@ -209,6 +278,12 @@ export default function MedicationsPage() {
                 {medication.notes && (
                   <p><strong>Notes:</strong> {medication.notes}</p>
                 )}
+                {medication.enableVoiceCall && (
+                  <p className="flex items-center text-blue-600">
+                    <Phone className="mr-1 h-3 w-3" />
+                    <span>Voice call enabled</span>
+                  </p>
+                )}
               </div>
             </div>
           ))}
@@ -252,7 +327,18 @@ export default function MedicationsPage() {
                 </label>
                 <select
                   value={formData.frequency}
-                  onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
+                  onChange={(e) => {
+                    const newFrequency = e.target.value;
+                    setFormData({ 
+                      ...formData, 
+                      frequency: newFrequency,
+                      // Reset time fields based on new frequency
+                      time: newFrequency !== 'Twice Daily' ? formData.time : '',
+                      times: newFrequency === 'Twice Daily' ? ['', ''] : [],
+                      daysOfWeek: newFrequency === 'Weekly' ? [] : [],
+                      daysOfMonth: newFrequency === 'Monthly' ? [] : []
+                    });
+                  }}
                   required
                   className="mt-1 block w-full rounded-md border border-gray-300 p-2"
                 >
@@ -263,18 +349,111 @@ export default function MedicationsPage() {
                   <option value="As Needed">As Needed</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Time
-                </label>
-                <input
-                  type="time"
-                  value={formData.time}
-                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                  required
-                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                />
-              </div>
+              {formData.frequency === 'Daily' || formData.frequency === 'As Needed' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Time</label>
+                  <input
+                    type="time"
+                    value={formData.time}
+                    onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                    required
+                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                  />
+                </div>
+              ) : formData.frequency === 'Twice Daily' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Times (Morning and Evening)</label>
+                  <div className="flex space-x-2">
+                    <input
+                      type="time"
+                      value={formData.times[0]}
+                      onChange={(e) => {
+                        const newTimes = [...formData.times];
+                        newTimes[0] = e.target.value;
+                        setFormData({ ...formData, times: newTimes });
+                      }}
+                      placeholder="Morning dose"
+                      required
+                      className="mt-1 block w-1/2 rounded-md border border-gray-300 p-2"
+                    />
+                    <input
+                      type="time"
+                      value={formData.times[1]}
+                      onChange={(e) => {
+                        const newTimes = [...formData.times];
+                        newTimes[1] = e.target.value;
+                        setFormData({ ...formData, times: newTimes });
+                      }}
+                      placeholder="Evening dose"
+                      required
+                      className="mt-1 block w-1/2 rounded-md border border-gray-300 p-2"
+                    />
+                  </div>
+                </div>
+              ) : formData.frequency === 'Weekly' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Day(s) of Week</label>
+                  <div className="mt-1 grid grid-cols-7 gap-1">
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
+                      <div key={day} className="flex flex-col items-center">
+                        <input
+                          type="checkbox"
+                          id={day}
+                          checked={formData.daysOfWeek.includes(day)}
+                          onChange={(e) => {
+                            const newDays = e.target.checked
+                              ? [...formData.daysOfWeek, day]
+                              : formData.daysOfWeek.filter(d => d !== day);
+                            setFormData({ ...formData, daysOfWeek: newDays });
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                        />
+                        <label htmlFor={day} className="mt-1 text-xs">
+                          {day.substring(0, 3)}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700">Time</label>
+                    <input
+                      type="time"
+                      value={formData.time}
+                      onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                    />
+                  </div>
+                </div>
+              ) : formData.frequency === 'Monthly' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Day(s) of Month</label>
+                  <select
+                    value={formData.daysOfMonth[0] || ''}
+                    onChange={(e) => {
+                      const day = parseInt(e.target.value);
+                      setFormData({ ...formData, daysOfMonth: [day] });
+                    }}
+                    required
+                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                  >
+                    <option value="">Select day of month</option>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                      <option key={day} value={day}>{day}</option>
+                    ))}
+                  </select>
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700">Time</label>
+                    <input
+                      type="time"
+                      value={formData.time}
+                      onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                      required
+                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                    />
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Notes (Optional)
@@ -286,7 +465,19 @@ export default function MedicationsPage() {
                   rows="3"
                 />
               </div>
-              <div className="flex justify-end space-x-3">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="enableVoiceCall"
+                  checked={formData.enableVoiceCall}
+                  onChange={(e) => setFormData({ ...formData, enableVoiceCall: e.target.checked })}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="enableVoiceCall" className="ml-2 block text-sm text-gray-700">
+                  Enable Voice Call Reminders
+                </label>
+              </div>
+              <div className="mt-4 flex justify-end space-x-3">
                 <Button
                   type="button"
                   variant="outline"

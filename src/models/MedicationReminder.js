@@ -15,11 +15,25 @@ const MedicationReminderSchema = new mongoose.Schema({
     required: true,
   },
   time: {
-    type: String, // e.g., "08:00 AM"
-    required: true,
+    type: String, // e.g., "08:00"
+    required: function() {
+      return !this.times || this.times.length === 0;
+    },
   },
+  times: [{
+    type: String, // Array of times for multiple doses per day (e.g., ["08:00", "20:00"])
+  }],
+  daysOfWeek: [{
+    type: String,
+    enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  }],
+  daysOfMonth: [{
+    type: Number,
+    min: 1,
+    max: 31,
+  }],
   frequency: {
-    type: String, // e.g., "Daily", "Twice a day"
+    type: String, // e.g., "Daily", "Twice Daily", "Weekly", "Monthly", "As Needed"
     required: true,
   },
   status: {

@@ -54,7 +54,11 @@ export async function GET() {
           formattedDoctors.push({
             id: doctor._id.toString(),
             name: doctor.userId.name || 'Unknown Doctor',
-            email: doctor.userId.email || 'No email available'
+            email: doctor.userId.email || 'No email available',
+            specialization: doctor.specialization || 'General Physician',
+            secondarySpecializations: doctor.secondarySpecializations || [],
+            qualifications: doctor.qualifications || '',
+            yearsOfExperience: doctor.yearsOfExperience || 0
           });
         } else {
           console.log('Skipping doctor with missing user data:', doctor._id);

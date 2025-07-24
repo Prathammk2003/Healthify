@@ -4,6 +4,7 @@
 
 /**
  * Formats a phone number to E.164 format (required for Twilio)
+ * Uses +91 (India) country code by default if no country code is provided
  * 
  * @param {string} phoneNumber - The phone number to format
  * @returns {string} - The formatted phone number
@@ -19,8 +20,8 @@ export function formatPhoneNumber(phoneNumber) {
   // Strip non-numeric characters
   const numericOnly = phoneNumber.replace(/\D/g, '');
   
-  // Add + prefix
-  return '+' + numericOnly;
+  // Add +91 prefix (India) instead of just + 
+  return '+91' + numericOnly;
 }
 
 /**

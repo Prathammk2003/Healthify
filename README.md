@@ -1,147 +1,215 @@
-<<<<<<< HEAD
 # Healthcare App
 
 A complete healthcare management solution featuring medication reminders, appointments, medical records, and notifications.
 
-## Features
+---
 
+## Table of Contents
+- [Features](#features)
+- [Directory Structure](#directory-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Running the App](#running-the-app)
+- [Notification & Voice Call System](#notification--voice-call-system)
+- [Testing & Troubleshooting](#testing--troubleshooting)
+- [Deployment](#deployment)
+- [Best Practices](#best-practices)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Features
 - **Medication Reminder System**: SMS and voice call notifications
 - **Appointment Management**: Schedule and manage healthcare appointments
 - **Medical Records**: Secure storage and access to medical records
 - **User Profiles**: Personalized healthcare information
 - **Multi-channel Notifications**: SMS, voice calls, and in-app notifications
+- **Daily Health Tips**: Automated educational tips
+
+---
+
+## Directory Structure
+```
+healthcare-app/
+├── src/                  # Source code (APIs, models, services, UI, schedulers)
+│   ├── app/              # Next.js app directory
+│   ├── components/       # React components
+│   ├── constants/        # App constants
+│   ├── hooks/            # Custom React hooks
+│   ├── lib/              # Library utilities
+│   ├── middleware/       # Middleware logic
+│   ├── models/           # Mongoose models
+│   ├── scheduler/        # Scheduler logic
+│   ├── scripts/          # Utility scripts
+│   ├── services/         # Service logic (notifications, etc.)
+│   ├── utils/            # Utility functions
+│   ├── medication-tools.js      # Medication notification tools
+│   ├── medication-testing.js    # Testing scripts for notifications
+│   ├── server.js                # Scheduler entry point
+│   ├── start-services.js        # Start multiple services
+│   └── test-scheduler.js        # Scheduler test script
+├── public/               # Static assets
+├── prisma/               # (If used) Database schema/migrations
+├── logs/                 # Application logs
+├── .vercel/              # Vercel deployment config
+├── package.json          # Project metadata and scripts
+├── .env.local.example    # Example environment file
+├── README.md             # This file
+└── ...
+```
+
+---
 
 ## Getting Started
 
 ### Prerequisites
-
-- Node.js (v14+)
-- MongoDB
-- Twilio account for SMS and voice notifications
+- **Node.js** (v14 or higher)
+- **MongoDB** (running and accessible)
+- **Twilio account** (for SMS and voice notifications)
 
 ### Installation
-
-1. Clone the repository
-2. Install dependencies:
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd healthcare-app
+   ```
+2. **Install dependencies**
    ```bash
    npm install
    ```
-3. Create a `.env.local` file with the following variables:
-   ```
-   MONGO_URI=your_mongodb_connection_string
-   JWT_SECRET=your_jwt_secret
-   TWILIO_ACCOUNT_SID=your_twilio_sid
-   TWILIO_AUTH_TOKEN=your_twilio_auth_token
-   TWILIO_PHONE_NUMBER=your_twilio_phone_number
-   ```
+3. **Set up environment variables**
+   - Copy `.env.local.example` to `.env.local` and fill in your values:
+     ```
+     MONGO_URI=your_mongodb_connection_string
+     JWT_SECRET=your_jwt_secret
+     TWILIO_ACCOUNT_SID=your_twilio_sid
+     TWILIO_AUTH_TOKEN=your_twilio_auth_token
+     TWILIO_PHONE_NUMBER=your_twilio_phone_number
+     EMAIL_SERVICE=gmail
+     EMAIL_USER=your_email@gmail.com
+     EMAIL_PASSWORD=your_email_password
+     ```
 
-### Running the App
+---
 
-Start the Next.js development server:
-```bash
-npm run dev
-```
+## Environment Variables
+- `MONGO_URI` - MongoDB connection string
+- `JWT_SECRET` - Secret for JWT authentication
+- `TWILIO_ACCOUNT_SID` - Twilio account SID
+- `TWILIO_AUTH_TOKEN` - Twilio auth token
+- `TWILIO_PHONE_NUMBER` - Twilio phone number (E.164 format)
+- `EMAIL_SERVICE` - Email provider (e.g., gmail)
+- `EMAIL_USER` - Email address to send from
+- `EMAIL_PASSWORD` - Email password or app password
 
-Start the reminder scheduler service:
-```bash
-npm run scheduler
-```
+> **Note:** Never commit your `.env.local` or sensitive credentials to version control. `.env*` is already in `.gitignore`.
 
-Start both services at once:
-```bash
-npm run start:all
-```
+---
 
-## Testing Notifications
+## Running the App
 
-The app includes a unified medication notification testing tool to verify your Twilio integration:
+- **Start the Next.js development server:**
+  ```bash
+  npm run dev
+  ```
+- **Start the reminder scheduler service:**
+  ```bash
+  npm run scheduler
+  ```
+- **Start both services at once:**
+  ```bash
+  npm run start:all
+  ```
+- **Build for production:**
+  ```bash
+  npm run build
+  npm start
+  ```
+- **Lint the code:**
+  ```bash
+  npm run lint
+  ```
 
-### Send a Test SMS
-```bash
-npm run test:sms "+1234567890"
-```
+### Available Scripts
+- `dev` - Start Next.js in development mode
+- `build` - Build the app for production
+- `start` - Start the production server
+- `scheduler` - Start the medication/appointment scheduler
+- `start:all` - Start both Next.js and scheduler
+- `test:sms` - Test SMS notification
+- `test:voice` - Test voice call notification
+- `reminder` - Test full medication reminder (SMS + voice)
+- `test:scheduler` - Test the scheduler logic
 
-### Make a Test Voice Call
-```bash
-npm run test:voice "+1234567890"
-```
+---
 
-### Send a Complete Medication Reminder (SMS + Voice)
-```bash
-npm run reminder "+1234567890" "Medication Name" "Dosage" true
-```
+## Notification & Voice Call System
 
-You can also use the medication tools directly with more options:
-```bash
-node src/medication-tools.js [command] [phoneNumber] [medicationName] [dosage] [enableVoiceCall]
-```
+### Medication Reminders
+- **SMS and Voice Call**: Automated reminders for medications
+- **Scheduling**: Flexible frequencies (daily, weekly, etc.)
+- **Web Management**: Add/edit/delete reminders in the UI
 
-Available commands:
-- `sms` - Send a test SMS message
-- `voice` - Make a test voice call
-- `reminder` - Send a medication reminder (SMS + optional voice call)
-- `help` - Show the help message
+### Appointment Reminders
+- **Multi-interval notifications** (24h, 2h before)
 
-## Voice Call Feature
+### Daily Health Tips
+- **Automated daily tips** via SMS/email
 
-For detailed instructions on setting up and using the voice call feature, please refer to the [Voice Call Guide](VOICE_CALL_GUIDE.md).
+### How to Use
+1. **Add your phone number** (E.164 format) in your profile
+2. **Create medication reminders** in the app
+3. **Enable voice call** for critical meds if desired
+4. **Keep the scheduler running**
 
-## Learn More
+### Testing Notifications
+- **Send a test SMS:**
+  ```bash
+  npm run test:sms "+1234567890"
+  ```
+- **Make a test voice call:**
+  ```bash
+  npm run test:voice "+1234567890"
+  ```
+- **Send a complete reminder:**
+  ```bash
+  npm run reminder "+1234567890" "Medication Name" "Dosage" true
+  ```
 
-To learn more about Next.js, take a look at the following resources:
+### Troubleshooting
+- Ensure phone numbers are in E.164 format
+- Scheduler must be running for reminders
+- Twilio trial accounts require verified numbers
+- Check logs in `logs/app.log` for errors
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment
 
-## Deploy on Vercel
+### Deploy on Vercel
+- The app is ready for [Vercel](https://vercel.com/) deployment.
+- Do **not** commit the `.vercel` folder; it is in `.gitignore`.
+- See [Next.js deployment docs](https://nextjs.org/docs/app/building-your-application/deploying) for more info.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Other Deployment
+- Ensure all environment variables are set in your deployment environment.
+- Use `npm run build` and `npm start` for production.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
 
-## Healthcare App Features
+## Best Practices
+- **.env files**: Never commit secrets; `.env*` is in `.gitignore`.
+- **Logs**: `logs/` is for runtime logs; do not commit log files.
+- **Node modules**: `node_modules/` is not tracked.
+- **Sensitive config**: `.vercel/` and other sensitive files are ignored.
 
-### Notification System
+---
 
-The Healthcare App includes a comprehensive notification system for patient engagement and reminders:
+## Contributing
+Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
 
-#### Key Features
+---
 
-- **Medication Reminders**: Automatic SMS and email notifications when it's time to take prescribed medications
-- **Appointment Reminders**: Notifications sent at multiple intervals (24 hours before, 2 hours before) for upcoming appointments
-- **Daily Health Tips**: Educational health tips sent once daily to encourage healthy behaviors
-- **Multi-Channel Support**: Delivers notifications via SMS (using Twilio) and email
-- **Notification Tracking**: Prevents duplicate notifications and tracks delivery status
-- **Personalized Content**: Dynamic content tailored to each user's specific appointments and medications
-
-#### Configuration
-
-To enable the notification system, you'll need to set up the following environment variables:
-
-1. **SMS Notifications via Twilio**:
-   - `TWILIO_ACCOUNT_SID`: Your Twilio account SID
-   - `TWILIO_AUTH_TOKEN`: Your Twilio auth token
-   - `TWILIO_PHONE_NUMBER`: Your Twilio phone number
-
-2. **Email Notifications**:
-   - `EMAIL_SERVICE`: Email service provider (e.g., "gmail")
-   - `EMAIL_USER`: Email address to send from
-   - `EMAIL_PASSWORD`: Email password or app-specific password
-
-See the `.env.local.example` file for a complete list of required environment variables.
-
-#### Running the Scheduler
-
-The notification scheduler runs automatically with the application, checking for reminders that need to be sent at regular intervals. The scheduler handles:
-
-- Daily reset of medication reminders at midnight
-- Checking for medication reminders every minute
-- Checking for appointment reminders every minute
-- Sending daily health tips at 9 AM
-
-You can monitor scheduler activity in the server logs when running the application.
-=======
-# healthcare-app
->>>>>>> d883d587a4c870ae7ea65e7ee5fe74773b62dfa1
+## License
+This project is licensed under the MIT License.

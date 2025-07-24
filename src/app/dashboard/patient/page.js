@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Chart from 'chart.js/auto';
-import { Calendar, Clock, PillIcon, Brain, AlertCircle, Utensils, Activity, BarChart, Zap } from 'lucide-react';
+import { Calendar, Clock, PillIcon, Brain, AlertCircle, Utensils, Activity, BarChart, Zap, Stethoscope } from 'lucide-react';
 
 export default function PatientDashboard() {
   const [profile, setProfile] = useState(null);
@@ -327,7 +327,7 @@ export default function PatientDashboard() {
             </div>
           </Link>
 
-          <Link href="/dashboard/add-medication">
+          <Link href="/dashboard/medications">
             <div className="card-3d p-4 text-center group cursor-pointer">
               <div className="dashboard-icon from-green-500 to-green-700 mx-auto mb-3 group-hover:scale-110 transition-transform">
                 <PillIcon className="h-6 w-6" />
@@ -351,6 +351,15 @@ export default function PatientDashboard() {
                 <Utensils className="h-6 w-6" />
               </div>
               <p className="font-medium">Nutrition Planner</p>
+            </div>
+          </Link>
+          
+          <Link href="/dashboard/symptom-checker">
+            <div className="card-3d p-4 text-center group cursor-pointer">
+              <div className="dashboard-icon from-red-500 to-red-700 mx-auto mb-3 group-hover:scale-110 transition-transform">
+                <Stethoscope className="h-6 w-6" />
+              </div>
+              <p className="font-medium">Symptom Checker</p>
             </div>
           </Link>
         </div>

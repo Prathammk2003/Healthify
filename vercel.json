@@ -1,5 +1,11 @@
 {
   "version": 2,
+  "crons": [
+    {
+      "path": "/api/cron/reminder",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "env": {
     "NODE_ENV": "production"
   }

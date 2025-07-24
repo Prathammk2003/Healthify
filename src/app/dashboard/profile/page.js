@@ -2,23 +2,45 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { User, Mail, Key, AlertCircle, Phone, MapPin, Calendar } from 'lucide-react';
+import { User, Mail, Key, AlertCircle, Phone, MapPin, Calendar, Stethoscope } from 'lucide-react';
+import { DOCTOR_SPECIALIZATIONS } from '@/constants/specializations';
 
 export default function ProfilePage() {
-  const { isAuthenticated, userId } = useAuth();
+  const { isAuthenticated, userId, verifyToken, role } = useAuth();
   const [profile, setProfile] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [doctorProfile, setDoctorProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!isAuthenticated || !userId) return;
-
       try {
         setLoading(true);
-        const token = localStorage.getItem('token');
+        setError('');
+        
+        // Check if user is authenticated and has a userId
+        if (!isAuthenticated || !userId) {
+          setLoading(false);
+          setError('You must be logged in to view your profile');
+          return;
+        }
+
+        // Verify token is valid before proceeding
+        if (!verifyToken()) {
+          setLoading(false);
+          setError('Your session has expired. Please log in again.');
+          return;
+        }
+
+        // Get token from localStorage and sessionStorage
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        if (!token) {
+          setLoading(false);
+          setError('Authentication token missing. Please log in again.');
+          return;
+        }
         
         // Fetch user account info
         const response = await fetch('/api/user-profile', {
@@ -26,6 +48,13 @@ export default function ProfilePage() {
             Authorization: `Bearer ${token}`
           }
         });
+
+        if (response.status === 401) {
+          // Token is invalid or expired
+          setLoading(false);
+          setError('Your session has expired. Please log in again.');
+          return;
+        }
 
         if (!response.ok) {
           throw new Error('Failed to fetch profile');
@@ -48,10 +77,31 @@ export default function ProfilePage() {
           // Profile not found, create a default one
           console.log('Profile not found, creating default profile');
           await createDefaultProfile(token);
+        } else if (profileResponse.status === 401) {
+          // Token is invalid or expired
+          setError('Your session has expired. Please log in again.');
+        }
+
+        // If user is a doctor, fetch doctor profile
+        if (role === 'doctor') {
+          try {
+            const doctorResponse = await fetch('/api/doctors', {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            });
+            
+            if (doctorResponse.ok) {
+              const doctorData = await doctorResponse.json();
+              setDoctorProfile(doctorData.doctor);
+            }
+          } catch (error) {
+            console.error('Error fetching doctor profile:', error);
+          }
         }
       } catch (err) {
         console.error('Error fetching profile:', err);
-        setError('Failed to load profile data');
+        setError('Failed to load profile data: ' + (err.message || ''));
       } finally {
         setLoading(false);
       }
@@ -91,7 +141,7 @@ export default function ProfilePage() {
     };
 
     fetchProfile();
-  }, [isAuthenticated, userId]);
+  }, [isAuthenticated, userId, verifyToken, role]);
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -236,6 +286,55 @@ export default function ProfilePage() {
     }
   };
 
+  const handleUpdateDoctorSpecialization = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      const token = localStorage.getItem('token');
+      const specialization = e.target.specialization.value;
+      
+      // Get the secondary specializations (if any were selected)
+      const secondarySpecializationsSelect = e.target.secondarySpecializations;
+      const secondarySpecializations = [];
+      if (secondarySpecializationsSelect) {
+        for (let i = 0; i < secondarySpecializationsSelect.options.length; i++) {
+          if (secondarySpecializationsSelect.options[i].selected) {
+            secondarySpecializations.push(secondarySpecializationsSelect.options[i].value);
+          }
+        }
+      }
+
+      const response = await fetch('/api/doctors/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          specialization,
+          secondarySpecializations,
+          qualifications: doctorProfile?.qualifications || '',
+          yearsOfExperience: doctorProfile?.yearsOfExperience || 0,
+          bio: doctorProfile?.bio || ''
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update specialization');
+      }
+
+      const data = await response.json();
+      setDoctorProfile(data.doctor);
+      setSuccessMessage('Doctor specialization updated successfully');
+    } catch (err) {
+      console.error('Error updating specialization:', err);
+      setError(err.message || 'Failed to update specialization');
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="flex h-[80vh] flex-col items-center justify-center">
@@ -248,8 +347,33 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+      <div className="container mx-auto p-4">
+        <div className="flex justify-center my-8">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+        <p className="text-center text-gray-600">Loading profile information...</p>
+      </div>
+    );
+  }
+
+  if (error && error.includes('session has expired')) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+          <div className="flex items-start">
+            <AlertCircle className="h-6 w-6 text-yellow-500 mr-3" />
+            <div>
+              <p className="font-bold">Session Expired</p>
+              <p className="text-sm">{error}</p>
+              <button 
+                onClick={() => window.location.href = '/login'} 
+                className="mt-3 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded transition-colors"
+              >
+                Log In Again
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -311,7 +435,7 @@ export default function ProfilePage() {
           </form>
         </div>
 
-        {/* Contact Information - New Section */}
+        {/* Contact Information */}
         <div className="rounded-lg border bg-white p-6 shadow-sm">
           <h2 className="mb-6 text-xl font-semibold text-gray-900">Contact Information</h2>
           <form onSubmit={handleUpdateContactInfo} className="space-y-4">
@@ -357,6 +481,57 @@ export default function ProfilePage() {
           </form>
         </div>
 
+        {/* Doctor Specialization - Only shown for doctors */}
+        {role === 'doctor' && (
+          <div className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="mb-6 text-xl font-semibold text-gray-900">Doctor Specialization</h2>
+            <form onSubmit={handleUpdateDoctorSpecialization} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-800">Primary Specialization</label>
+                <div className="relative">
+                  <Stethoscope className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                  <select
+                    name="specialization"
+                    defaultValue={doctorProfile?.specialization || ''}
+                    className="w-full rounded-md border border-gray-300 pl-10 py-2 text-gray-900"
+                    required
+                  >
+                    <option value="">Select your specialization</option>
+                    {DOCTOR_SPECIALIZATIONS.map((spec) => (
+                      <option key={spec} value={spec}>
+                        {spec}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-800">Secondary Specializations</label>
+                <p className="text-sm text-gray-500 mb-2">Hold Ctrl/Cmd key to select multiple</p>
+                <select
+                  name="secondarySpecializations"
+                  defaultValue={doctorProfile?.secondarySpecializations || []}
+                  className="w-full rounded-md border border-gray-300 py-2 text-gray-900"
+                  multiple
+                  size={4}
+                >
+                  {DOCTOR_SPECIALIZATIONS.map((spec) => (
+                    <option key={spec} value={spec}>
+                      {spec}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="w-full rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+              >
+                Update Specialization
+              </button>
+            </form>
+          </div>
+        )}
+
         {/* Change Password */}
         <div className="rounded-lg border bg-white p-6 shadow-sm">
           <h2 className="mb-6 text-xl font-semibold text-gray-900">Change Password</h2>
@@ -382,6 +557,7 @@ export default function ProfilePage() {
                   name="newPassword"
                   className="w-full rounded-md border border-gray-300 pl-10 py-2 text-gray-900"
                   required
+                  minLength={8}
                 />
               </div>
             </div>
@@ -394,6 +570,7 @@ export default function ProfilePage() {
                   name="confirmPassword"
                   className="w-full rounded-md border border-gray-300 pl-10 py-2 text-gray-900"
                   required
+                  minLength={8}
                 />
               </div>
             </div>

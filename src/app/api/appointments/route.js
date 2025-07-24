@@ -6,11 +6,12 @@ import UserProfile from '@/models/UserProfile';
 import { NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { isTimeSlotAvailable, updateSlotFromAppointment } from '@/utils/slotManager';
 
 export async function POST(req) {
   try {
     await connectDB();
-    console.log('Connected to database');
+    console.log('Connected to database - creating appointment request');
 
     const authHeader = req.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -22,42 +23,58 @@ export async function POST(req) {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (error) {
+      console.error('Token verification failed:', error);
       return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
     }
 
     const userId = decoded.id;
     if (!userId) {
+      console.error('User ID missing in token');
       return NextResponse.json({ error: 'Unauthorized: User ID missing' }, { status: 401 });
     }
 
     const { doctorId, date, time } = await req.json();
-    console.log('Appointment request data:', { doctorId, date, time });
+    console.log('Appointment request data:', { userId, doctorId, date, time });
 
     if (!doctorId || !date || !time) {
+      console.error('Missing required fields');
       return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
     }
 
     // Validate doctorId format
     if (!mongoose.Types.ObjectId.isValid(doctorId)) {
+      console.error(`Invalid doctor ID format: ${doctorId}`);
       return NextResponse.json({ error: 'Invalid doctor ID format' }, { status: 400 });
     }
 
     // Verify doctor exists
     const doctor = await Doctor.findById(doctorId);
     if (!doctor) {
-      console.log(`Doctor with ID ${doctorId} not found`);
+      console.error(`Doctor with ID ${doctorId} not found`);
       return NextResponse.json({ error: 'Doctor not found' }, { status: 404 });
     }
 
-    console.log(`Creating appointment with doctor ID: ${doctorId} for user: ${userId}`);
+    // NEW: Check if time slot is available in real-time
+    const isAvailable = await isTimeSlotAvailable(doctorId, date, time);
+    if (!isAvailable) {
+      console.error(`Time slot ${date} at ${time} is not available for doctor ${doctorId}`);
+      return NextResponse.json({ 
+        error: 'This time slot is no longer available. Please select another time.',
+        errorCode: 'TIME_SLOT_UNAVAILABLE'
+      }, { status: 409 });
+    }
+
+    console.log(`Doctor found: ${doctor._id}, creating appointment...`);
 
     // Get the patient profile - either find existing or create new
     let patientProfile = await UserProfile.findOne({ userId });
     
     if (!patientProfile) {
+      console.log(`Patient profile not found for user ID: ${userId}, creating new profile...`);
       // Get user info to create a profile
       const user = await User.findById(userId);
       if (!user) {
+        console.error(`User not found with ID: ${userId}`);
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
       
@@ -79,35 +96,48 @@ export async function POST(req) {
       
       await patientProfile.save();
       console.log(`Created new patient profile with ID: ${patientProfile._id}`);
+    } else {
+      console.log(`Found existing patient profile: ${patientProfile._id}`);
     }
     
-    // Automatically associate patient with doctor if not already associated
-    if (!doctor.patients.some(patientId => patientId.toString() === patientProfile._id.toString())) {
-      doctor.patients.push(patientProfile._id);
-      await doctor.save();
-      console.log(`Associated patient ${patientProfile._id} with doctor ${doctorId}`);
-    }
+    // Note: Association with doctor now happens only after approval
+    // We removed automatic association at request time
 
     // Create appointment with pending status
-    const appointment = await Appointment.create({
+    const appointmentData = {
       doctor: doctorId,
       date,
       time,
       userId,
       status: 'pending'
+    };
+    console.log('Creating appointment with data:', appointmentData);
+    
+    const appointment = await Appointment.create(appointmentData);
+
+    // NEW: Update the time slot status
+    await updateSlotFromAppointment(appointment, 'create');
+
+    console.log('Appointment created successfully:', {
+      id: appointment._id,
+      doctor: appointment.doctor,
+      status: appointment.status
     });
 
-    console.log('Appointment created:', appointment);
-
     return NextResponse.json(
-      { message: 'Appointment request sent successfully!', appointment },
+      { 
+        message: 'Appointment request sent successfully!', 
+        appointment,
+        appointmentId: appointment._id
+      },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Server Error:', error);
+    console.error('Server Error creating appointment:', error);
     return NextResponse.json({ 
       error: 'Server error', 
-      details: error.message 
+      details: error.message,
+      stack: error.stack 
     }, { status: 500 });
   }
 }

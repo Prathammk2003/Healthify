@@ -1,6 +1,6 @@
 // This file serves as an entry point for the scheduler
 // Import the scheduler from the renamed file
-import { startReminderScheduler, manuallyCheckReminders, checkMedicationReminders } from './reminder.js';
+import { startReminderScheduler, manuallyCheckReminders, checkMedicationReminders, isSchedulerRunning } from './reminder.js';
 
 console.log('✅ Scheduler initialized - index.js');
 
@@ -8,25 +8,31 @@ console.log('✅ Scheduler initialized - index.js');
 export const startAllSchedulers = () => {
   console.log('Starting all scheduler services...');
   
-  // Start the medication reminder scheduler
-  const reminderJob = startReminderScheduler();
-  
-  // Add more schedulers here if needed
-  
-  console.log('All scheduler services started');
-  
-  return {
-    reminderJob,
-    // Add other job references here
-  };
+  try {
+    // Start the medication reminder scheduler
+    const reminderJob = startReminderScheduler();
+    
+    // Add more schedulers here if needed
+    
+    console.log('All scheduler services started');
+    
+    return {
+      reminderJob,
+      // Add other job references here
+    };
+  } catch (error) {
+    console.error('❌ Error starting schedulers:', error);
+    throw error;
+  }
 };
 
 // Export other utilities
-export { manuallyCheckReminders, checkMedicationReminders };
+export { manuallyCheckReminders, checkMedicationReminders, isSchedulerRunning };
 
 // Default export
 export default {
   startAllSchedulers,
   manuallyCheckReminders,
-  checkMedicationReminders
+  checkMedicationReminders,
+  isSchedulerRunning
 }; 

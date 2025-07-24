@@ -3,12 +3,10 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import DoctorDashboard from './doctor/page';
-import PatientDashboard from './patient/page';
 
 export default function Dashboard() {
-  const { role, isAuthenticated, isAdmin } = useAuth();
   const router = useRouter();
+  const { isAuthenticated, role, isAdmin } = useAuth();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -16,35 +14,19 @@ export default function Dashboard() {
       return;
     }
 
-    // Redirect to role-specific dashboard if on the main dashboard page
-    if (window.location.pathname === '/dashboard') {
-      if (isAdmin) {
-        router.push('/dashboard/admin');
-      } else if (role === 'doctor') {
-        router.push('/dashboard/doctor');
-      } else if (role === 'patient') {
-        router.push('/dashboard/patient');
-      }
+    // Redirect based on user role
+    if (isAdmin) {
+      router.push('/dashboard/admin');
+    } else if (role === 'doctor') {
+      router.push('/dashboard/doctor');
+    } else {
+      router.push('/dashboard/patient');
     }
   }, [isAuthenticated, role, isAdmin, router]);
 
-  if (!isAuthenticated) {
-    return (
-      <div className="p-6 max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold mb-4 text-gray-900">Your Health Dashboard</h1>
-        <p className="mb-6 text-gray-600">Please log in to view your dashboard.</p>
-      </div>
-    );
-  }
-
-  if (isAdmin) {
-    // Let the redirect handle this, no need to render
-    return null;
-  } else if (role === 'doctor') {
-    return <DoctorDashboard />;
-  } else if (role === 'patient') {
-    return <PatientDashboard />;
-  }
-
-  return null;
+  return (
+    <div className="flex justify-center items-center h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+    </div>
+  );
 }

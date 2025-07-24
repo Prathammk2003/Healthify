@@ -25,8 +25,15 @@ const AppointmentSchema = new mongoose.Schema({
       message: props => `${props.value} is not a valid user ID!`
     }
   },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+  status: { 
+    type: String, 
+    enum: ['pending', 'approved', 'rejected', 'pending_update', 'cancelled'], 
+    default: 'pending' 
+  },
   notes: { type: String },
+  // Fields for tracking reschedule requests
+  previousDate: { type: String },
+  previousTime: { type: String },
   // Reminder tracking fields
   reminderSent24h: { type: Boolean, default: false },
   reminderSent12h: { type: Boolean, default: false },

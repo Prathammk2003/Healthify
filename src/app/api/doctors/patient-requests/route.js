@@ -11,6 +11,7 @@ import mongoose from 'mongoose';
 export async function GET(req) {
   try {
     await connectDB();
+    console.log('Fetching doctor patient requests');
 
     // Get the authorization header
     const authHeader = req.headers.get('authorization');
@@ -22,17 +23,26 @@ export async function GET(req) {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Ensure the user is a doctor
-    const user = await User.findById(decoded.id);
-    if (!user || user.role !== 'doctor') {
-      return NextResponse.json({ error: 'Unauthorized - doctors only' }, { status: 403 });
+    // Find the doctor profile for this user ID
+    const doctorProfile = await Doctor.findOne({ userId: decoded.id });
+    
+    if (!doctorProfile) {
+      console.warn(`Doctor profile not found for user ID: ${decoded.id}`);
+      return NextResponse.json({ 
+        message: 'No doctor profile found',
+        requests: [] 
+      });
     }
+    
+    console.log(`Found doctor profile with ID: ${doctorProfile._id} for user: ${decoded.id}`);
 
     // Find all pending requests for this doctor
     const requests = await PatientRequest.find({ 
-      doctorId: decoded.id,
+      doctorId: decoded.id,  // Using the user ID as the doctor ID
       status: 'pending'
     });
+
+    console.log(`Found ${requests.length} pending patient requests`);
 
     return NextResponse.json({ 
       message: 'Requests retrieved successfully',
@@ -40,7 +50,10 @@ export async function GET(req) {
     });
   } catch (error) {
     console.error('Get patient requests error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Server error',
+      details: error.message
+    }, { status: 500 });
   }
 }
 

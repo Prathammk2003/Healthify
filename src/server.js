@@ -4,13 +4,50 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import { connectDB } from './lib/db.js';
-import { startAllSchedulers, manuallyCheckReminders } from './scheduler/index.js';
+import { startAllSchedulers, manuallyCheckReminders, isSchedulerRunning } from './scheduler/index.js';
 import fs from 'fs';
+import mongoose from 'mongoose';
 
 // Setup environment
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
+
+// Set up logging
+const logDir = path.resolve(__dirname, '../logs');
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
+const logFile = path.join(logDir, 'app.log');
+
+// Redirect console output to file
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+// Function to log to file and console
+function logToFileAndConsole(type, ...args) {
+  const timestamp = new Date().toISOString();
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+  const logMessage = `[${timestamp}] [${type}] ${message}\n`;
+  
+  // Write to log file
+  fs.appendFileSync(logFile, logMessage);
+  
+  // Also log to original console based on type
+  if (type === 'ERROR') {
+    originalConsoleError(...args);
+  } else if (type === 'WARN') {
+    originalConsoleWarn(...args);
+  } else {
+    originalConsoleLog(...args);
+  }
+}
+
+// Override console methods
+console.log = (...args) => logToFileAndConsole('INFO', ...args);
+console.error = (...args) => logToFileAndConsole('ERROR', ...args);
+console.warn = (...args) => logToFileAndConsole('WARN', ...args);
 
 // Log environment variables (without exposing secrets)
 console.log('Environment variables loaded:');
@@ -55,6 +92,7 @@ const removeSessionsFlag = () => {
 // Connect to database
 (async () => {
   try {
+    console.log('Attempting to connect to MongoDB...');
     await connectDB();
     console.log('✅ Connected to MongoDB');
     
@@ -62,18 +100,29 @@ const removeSessionsFlag = () => {
     createSessionsFlag();
     
     // Start all schedulers
-    const schedulers = startAllSchedulers();
-    console.log('✅ All schedulers started');
+    try {
+      console.log('Starting scheduler services...');
+      const schedulers = startAllSchedulers();
+      console.log('✅ All schedulers started successfully');
+    } catch (schedulerError) {
+      console.error('❌ Failed to start schedulers:', schedulerError);
+    }
     
     // Basic health check endpoint
     app.get('/health', (req, res) => {
-      res.json({ status: 'ok', message: 'Scheduler service is running' });
+      res.json({ 
+        status: 'ok', 
+        message: 'Scheduler service is running',
+        mongoDbConnected: mongoose.connection.readyState === 1,
+        schedulerActive: isSchedulerRunning 
+      });
     });
     
     // Manual trigger endpoint for testing
     app.post('/trigger/medication-reminder', async (req, res) => {
       try {
         const { time } = req.body;
+        console.log(`Manually triggering medication reminders for time: ${time || 'current time'}`);
         
         // Use the imported manuallyCheckReminders function
         await manuallyCheckReminders(time);

@@ -71,15 +71,9 @@ export default function AdminDashboard() {
   // Fetch users on component mount or when token changes
   useEffect(() => {
     if (!isAuthenticated || !token || !isAdmin) {
-      console.log('Debug - Not fetching users because:',
-        !isAuthenticated ? 'Not authenticated' : 
-        !token ? 'No token' : 
-        !isAdmin ? 'Not admin' : 'Unknown reason');
       return;
     }
     
-    console.log('Debug - Admin status confirmed, fetching users...');
-    console.log('Debug - Auth state:', { isAuthenticated, userId, isAdmin });
     fetchUsers();
   }, [isAuthenticated, token, isAdmin]);
 
@@ -98,33 +92,23 @@ export default function AdminDashboard() {
       setLoading(true);
       setError(null);
       
-      console.log('Debug - Starting fetchUsers() with token:', token ? 'Token exists' : 'No token');
-      console.log('Debug - Authorization header:', `Bearer ${token}`);
-      
       const response = await fetch('/api/users', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       
-      console.log('Debug - API response status:', response.status, response.statusText);
-      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Debug - API error response:', errorText);
         throw new Error(`Failed to fetch users: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('Debug - Raw API response:', data);
-      console.log('Debug - Fetched users count:', data.length ? data.length : 'No length property found');
-      console.log('Debug - Fetched users data type:', Array.isArray(data) ? 'Array' : typeof data);
       
       // Make sure we have a valid array of users
       if (Array.isArray(data)) {
         setUsers(data);
       } else {
-        console.error('Debug - Non-array response received:', data);
         setError('Received invalid response format from server.');
       }
     } catch (err) {
@@ -307,34 +291,12 @@ export default function AdminDashboard() {
     );
   });
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !isAdmin) {
     return <Loader />;
   }
 
-  if (!isAdmin) {
-    return (
-      <div className="flex h-[80vh] flex-col items-center justify-center">
-        <AlertTriangle className="h-16 w-16 text-yellow-500" />
-        <h2 className="mt-6 text-2xl font-bold">Access Denied</h2>
-        <p className="mt-2 text-gray-600">You do not have permission to access this page.</p>
-        <Button 
-          variant="outline" 
-          className="mt-4" 
-          onClick={() => router.push('/dashboard')}
-        >
-          Back to Dashboard
-        </Button>
-      </div>
-    );
-  }
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-8 flex items-center">
-        <ShieldCheckIcon className="mr-3 h-8 w-8 text-blue-500" />
-        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-      </div>
-
+    <div>
       {successMessage && (
         <div className="mb-4 flex items-center rounded-lg bg-green-100 p-4 text-green-700">
           <CheckCircleIcon className="mr-2 h-5 w-5" />
@@ -416,15 +378,6 @@ export default function AdminDashboard() {
                 <div className="flex h-64 flex-col items-center justify-center text-center">
                   <InfoIcon className="mb-2 h-12 w-12 text-gray-300" />
                   <p className="text-gray-500">No users found</p>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setIsCreateDialogOpen(true)}
-                    className="mt-4"
-                  >
-                    <UserPlusIcon className="mr-1 h-4 w-4" />
-                    Add Your First User
-                  </Button>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -445,50 +398,29 @@ export default function AdminDashboard() {
                             <TableCell className="font-medium">{user.name}</TableCell>
                             <TableCell>{user.email}</TableCell>
                             <TableCell>
-                              <Badge 
-                                variant={
-                                  user.role === 'admin' 
-                                    ? 'destructive' 
-                                    : user.role === 'doctor' 
-                                      ? 'default' 
-                                      : 'outline'
-                                }
-                              >
-                                {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                              </Badge>
+                              {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
                             </TableCell>
                             <TableCell>
-                              {user.isAdmin ? (
-                                <Badge variant="outline" className="bg-purple-100 text-purple-800">
-                                  Admin
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="bg-gray-100 text-gray-800">
-                                  Standard
-                                </Badge>
-                              )}
+                              {user.isAdmin ? "Admin" : "Standard"}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
                                 <Button 
                                   variant="ghost" 
-                                  size="icon"
+                                  size="sm"
                                   onClick={() => handleEditUser(user)}
                                   disabled={user._id === userId}
-                                  title={user._id === userId ? "Can't edit yourself here" : "Edit user"}
                                 >
-                                  <PencilIcon className="h-4 w-4" />
-                                  <span className="sr-only">Edit</span>
+                                  Edit
                                 </Button>
                                 <Button 
                                   variant="ghost" 
-                                  size="icon"
+                                  size="sm"
+                                  className="text-red-500"
                                   onClick={() => handleDeleteUser(user)}
                                   disabled={user._id === userId}
-                                  title={user._id === userId ? "Can't delete yourself" : "Delete user"}
                                 >
-                                  <TrashIcon className="h-4 w-4 text-red-500" />
-                                  <span className="sr-only">Delete</span>
+                                  Delete
                                 </Button>
                               </div>
                             </TableCell>

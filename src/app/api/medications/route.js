@@ -63,8 +63,7 @@ export async function POST(request) {
 
     // Format time to ensure 24-hour format (HH:MM)
     let formattedTime = body.time;
-    // If time is in 12-hour format, convert to 24-hour format
-    if (body.time.includes('AM') || body.time.includes('PM')) {
+    if (body.time && (body.time.includes('AM') || body.time.includes('PM'))) {
       const timeObj = new Date(`2000-01-01 ${body.time}`);
       formattedTime = timeObj.toLocaleTimeString("en-US", { 
         hour: "2-digit", 
@@ -73,29 +72,54 @@ export async function POST(request) {
       });
     }
     
+    // Format times array (for twice daily)
+    let formattedTimes = [];
+    if (body.times && body.times.length > 0) {
+      formattedTimes = body.times.map(time => {
+        if (time && (time.includes('AM') || time.includes('PM'))) {
+          const timeObj = new Date(`2000-01-01 ${time}`);
+          return timeObj.toLocaleTimeString("en-US", { 
+            hour: "2-digit", 
+            minute: "2-digit", 
+            hour12: false 
+          });
+        }
+        return time;
+      });
+    }
+    
     console.log(`Original time: ${body.time}, Formatted time: ${formattedTime}`);
+    console.log(`Original times: ${JSON.stringify(body.times)}, Formatted times: ${JSON.stringify(formattedTimes)}`);
 
-    // Create new medication reminder with properly converted userId
-    const reminder = new MedicationReminder({
+    // Create reminder object with base fields
+    const reminderData = {
       userId: mongoose.Types.ObjectId.isValid(decoded.id) ? decoded.id : mongoose.Types.ObjectId(decoded.id),
       medicationName: body.medicationName,
       dosage: body.dosage,
       frequency: body.frequency,
-      time: formattedTime, // Use formatted time
-      notes: body.notes,
-      enableVoiceCall: body.enableVoiceCall || false // Add voice call support
-    });
-
-    console.log('Creating medication with:', {
-      userId: decoded.id,
-      medicationName: body.medicationName,
-      dosage: body.dosage,
-      frequency: body.frequency,
-      time: formattedTime,
       notes: body.notes,
       enableVoiceCall: body.enableVoiceCall || false
-    });
+    };
 
+    // Add scheduling fields based on frequency
+    if (body.frequency === 'Twice Daily' && body.times && body.times.length >= 2) {
+      reminderData.times = formattedTimes;
+      // Use first time as main time for backward compatibility
+      reminderData.time = formattedTimes[0];
+    } else if (body.frequency === 'Weekly' && body.daysOfWeek && body.daysOfWeek.length > 0) {
+      reminderData.daysOfWeek = body.daysOfWeek;
+      reminderData.time = formattedTime;
+    } else if (body.frequency === 'Monthly' && body.daysOfMonth && body.daysOfMonth.length > 0) {
+      reminderData.daysOfMonth = body.daysOfMonth;
+      reminderData.time = formattedTime;
+    } else {
+      // Default for Daily and As Needed
+      reminderData.time = formattedTime;
+    }
+
+    console.log('Creating medication with:', reminderData);
+
+    const reminder = new MedicationReminder(reminderData);
     await reminder.save();
 
     // Create a notification for the new medication
@@ -138,16 +162,15 @@ export async function PUT(req) {
     await connectDB();
     
     const body = await req.json();
-    const { id, medicationName, dosage, time, frequency, notes } = body;
+    const { id, medicationName, dosage, time, times, frequency, daysOfWeek, daysOfMonth, notes, enableVoiceCall } = body;
     
-    if (!id || !medicationName || !dosage || !time || !frequency) {
-      return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+    if (!id || !medicationName || !dosage || !frequency) {
+      return NextResponse.json({ error: 'Required fields are missing' }, { status: 400 });
     }
 
-    // Format time to ensure 24-hour format (HH:MM)
+    // Format time if provided
     let formattedTime = time;
-    // If time is in 12-hour format, convert to 24-hour format
-    if (time.includes('AM') || time.includes('PM')) {
+    if (time && (time.includes('AM') || time.includes('PM'))) {
       const timeObj = new Date(`2000-01-01 ${time}`);
       formattedTime = timeObj.toLocaleTimeString("en-US", { 
         hour: "2-digit", 
@@ -156,11 +179,50 @@ export async function PUT(req) {
       });
     }
     
-    console.log(`Original time: ${time}, Formatted time: ${formattedTime}`);
+    // Format times array (for twice daily)
+    let formattedTimes = [];
+    if (times && times.length > 0) {
+      formattedTimes = times.map(t => {
+        if (t && (t.includes('AM') || t.includes('PM'))) {
+          const timeObj = new Date(`2000-01-01 ${t}`);
+          return timeObj.toLocaleTimeString("en-US", { 
+            hour: "2-digit", 
+            minute: "2-digit", 
+            hour12: false 
+          });
+        }
+        return t;
+      });
+    }
+    
+    // Create update object with base fields
+    const updateData = { 
+      medicationName, 
+      dosage, 
+      frequency, 
+      notes,
+      enableVoiceCall: enableVoiceCall || false 
+    };
+
+    // Add scheduling fields based on frequency
+    if (frequency === 'Twice Daily' && times && times.length >= 2) {
+      updateData.times = formattedTimes;
+      // Use first time as main time for backward compatibility
+      updateData.time = formattedTimes[0];
+    } else if (frequency === 'Weekly' && daysOfWeek && daysOfWeek.length > 0) {
+      updateData.daysOfWeek = daysOfWeek;
+      updateData.time = formattedTime;
+    } else if (frequency === 'Monthly' && daysOfMonth && daysOfMonth.length > 0) {
+      updateData.daysOfMonth = daysOfMonth;
+      updateData.time = formattedTime;
+    } else {
+      // Default for Daily and As Needed
+      updateData.time = formattedTime;
+    }
 
     const reminder = await MedicationReminder.findByIdAndUpdate(
       id,
-      { medicationName, dosage, time: formattedTime, frequency, notes },
+      updateData,
       { new: true }
     );
 
@@ -192,8 +254,9 @@ export async function DELETE(req) {
 
     await connectDB();
     
+    // Get ID from query parameter
     const url = new URL(req.url);
-    const id = url.pathname.split('/').pop();
+    const id = url.searchParams.get('id');
     
     if (!id) {
       return NextResponse.json({ error: 'Reminder ID is required' }, { status: 400 });

@@ -6,6 +6,10 @@ const UserSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, enum: ['admin', 'doctor', 'patient'], default: 'patient' },
   isAdmin: { type: Boolean, default: false },
+  isVerified: { type: Boolean, default: false },
+  verificationCode: { type: String, length: 6 },
+  verificationCodeExpires: { type: Date },
+  passwordChangeRequired: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // Middleware to automatically set isAdmin flag for admin role

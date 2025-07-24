@@ -1,6 +1,7 @@
 import Navbar from '@/components/Navbar';
 import '@/app/globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
+import AuthChecker from '@/components/AuthChecker';
 
 export const metadata = {
   title: 'Healthify - Your Healthcare Management Platform',
@@ -10,10 +11,12 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className="scroll-smooth">
-      <body className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 antialiased">
+      <body className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 antialiased flex flex-col">
         <AuthProvider>
+          <AuthChecker />
+          {/* Navbar has internal logic to determine when to show */}
           <Navbar />
-          <main>{children}</main>
+          <main className="flex-grow">{children}</main>
         </AuthProvider>
       </body>
     </html>

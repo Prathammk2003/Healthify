@@ -11,11 +11,25 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Symptoms are required' }, { status: 400 });
     }
 
+    // Log the request for monitoring (no personal data)
+    console.log(`Symptom checker request received with ${symptoms.length} characters`);
+
+    // Get the diagnosis from the AI module
     const diagnosis = await getSymptomDiagnosis(symptoms);
 
-    return NextResponse.json({ diagnosis }, { status: 200 });
+    // Save the query to the database for improving the system (optional)
+    // This could be implemented with a model to track common symptoms
+
+    return NextResponse.json({ 
+      diagnosis, 
+      timestamp: new Date().toISOString(),
+      status: 'success'
+    }, { status: 200 });
   } catch (error) {
     console.error('Error processing symptom checker request:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Server error processing your request. Please try again later.',
+      status: 'error'
+    }, { status: 500 });
   }
 }

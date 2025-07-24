@@ -30,31 +30,35 @@ const emailTransporter = nodemailer.createTransport({
 });
 
 /**
- * Formats a date string for display
+ * Format date string to a human-readable format
  * @param {string} dateStr - Date string in YYYY-MM-DD format
- * @returns {string} - Formatted date string (e.g., Monday, January 1, 2023)
+ * @returns {string} - Formatted date
  */
 const formatDate = (dateStr) => {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
+  const [year, month, day] = dateStr.split('-');
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
     weekday: 'long',
-    year: 'numeric',
     month: 'long',
     day: 'numeric',
+    year: 'numeric'
   });
 };
 
 /**
- * Formats a time string for display
+ * Format time string to a human-readable format
  * @param {string} timeStr - Time string in HH:MM format
- * @returns {string} - Formatted time string (e.g., 2:30 PM)
+ * @returns {string} - Formatted time
  */
 const formatTime = (timeStr) => {
   const [hours, minutes] = timeStr.split(':');
-  const hour = parseInt(hours, 10);
-  const isPM = hour >= 12;
-  const formattedHour = hour % 12 || 12;
-  return `${formattedHour}:${minutes} ${isPM ? 'PM' : 'AM'}`;
+  const date = new Date();
+  date.setHours(hours);
+  date.setMinutes(minutes);
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
 };
 
 /**
@@ -87,198 +91,161 @@ const getTimeUntilAppointment = (dateStr, timeStr) => {
 };
 
 /**
- * Check if a notification has been recently sent
- * @param {Object} params - Parameters
- * @param {string} params.userId - User ID
- * @param {string} params.type - Notification type
- * @param {string} params.referenceId - Reference ID
- * @param {number} params.hours - Hours to look back
- * @returns {Promise<boolean>} - True if a notification was recently sent
+ * Check if a notification was recently sent to avoid duplicates
+ * @param {Object} options - Options for checking recent notifications
+ * @returns {Promise<boolean>} - Whether a notification was recently sent
  */
 const hasRecentNotification = async ({ userId, type, referenceId, hours = 24 }) => {
-  const cutoffTime = new Date();
-  cutoffTime.setHours(cutoffTime.getHours() - hours);
-  
-  const existingNotification = await Notification.findOne({
-    userId,
-    type,
-    'metadata.referenceId': referenceId,
-    createdAt: { $gte: cutoffTime },
-    status: 'sent',
-  });
-  
-  return !!existingNotification;
+  try {
+    const cutoffTime = new Date();
+    cutoffTime.setHours(cutoffTime.getHours() - hours);
+    
+    const recentNotification = await Notification.findOne({
+      userId,
+      type,
+      referenceId,
+      createdAt: { $gte: cutoffTime }
+    });
+    
+    return !!recentNotification;
+  } catch (error) {
+    console.error('Error checking recent notifications:', error);
+    return false;
+  }
 };
 
 /**
- * Log a notification
- * @param {Object} params - Notification parameters
- * @returns {Promise<Object>} - Created notification log
+ * Log a notification in the database
+ * @param {Object} notification - Notification data
+ * @returns {Promise<Object>} - Created notification
  */
-const logNotification = async (params) => {
+const logNotification = async ({ userId, type, referenceId, channel, status, messageContent, metadata = {} }) => {
   try {
-    await connectDB();
-    
     const notification = new Notification({
-      userId: params.userId,
-      type: params.type,
-      messageContent: params.messageContent,
-      channel: params.channel || 'sms',
-      status: params.status || 'sent',
-      referenceId: params.referenceId || null,
-      isImportant: params.isImportant || false,
-      metadata: params.metadata || {}
+      userId,
+      type,
+      referenceId,
+      channel,
+      status,
+      messageContent,
+      metadata,
+      read: false
     });
     
     await notification.save();
-    console.log(`✅ Notification logged: ${params.type} for user ${params.userId}`);
     return notification;
   } catch (error) {
-    console.error('❌ Error logging notification:', error);
-    throw error;
+    console.error('Error logging notification:', error);
+    return null;
   }
 };
 
 /**
- * Send an SMS using Twilio
- * 
+ * Send an SMS message
  * @param {Object} options - SMS options
- * @param {string} options.phoneNumber - Recipient's phone number
- * @param {string} options.message - SMS message content
- * @returns {Promise<Object>} - Result of the SMS sending operation
+ * @returns {Promise<Object>} - Result of sending
  */
-async function sendSMS({ phoneNumber, message }) {
-  if (!phoneNumber) {
-    console.error('❌ Phone number is required to send SMS');
-    return { success: false, error: 'Phone number is required' };
-  }
-
-  if (!message) {
-    console.error('❌ Message content is required to send SMS');
-    return { success: false, error: 'Message content is required' };
-  }
-
+const sendSMS = async ({ phoneNumber, message }) => {
   try {
-    // Check if SMS is enabled and Twilio is configured
-    if (!twilioClient) {
-      console.error('❌ Twilio client not initialized');
-      return { success: false, error: 'SMS service not available' };
-    }
-
-    // Format phone number to E.164 format if not already formatted
-    let formattedPhone = phoneNumber;
+    // Format phone number with +91 country code (India) if needed
+    let formattedNumber = phoneNumber;
     if (!phoneNumber.startsWith('+')) {
-      formattedPhone = `+${phoneNumber.replace(/\D/g, '')}`;
+      formattedNumber = `+91${phoneNumber.replace(/\D/g, '')}`;
+    } else if (phoneNumber.startsWith('+1')) {
+      // Replace +1 with +91 if found (handle case where Twilio might be auto-formatting)
+      formattedNumber = `+91${phoneNumber.slice(2)}`;
     }
-
-    // Send the SMS
-    console.log(`📱 Sending SMS to ${formattedPhone}`);
-    const smsResult = await twilioClient.messages.create({
+    
+    console.log(`📱 Formatted phone number for SMS: ${formattedNumber}`);
+    console.log(`🔔 Attempting to send SMS to ${formattedNumber}: ${message}`);
+    
+    // Check if Twilio client is available
+    if (!twilioClient && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    }
+    
+    if (!twilioClient) {
+      console.warn('⚠️ Twilio client not available - using mock implementation');
+      return { success: true, messageId: `mock-${Date.now()}`, mock: true };
+    }
+    
+    // Real Twilio implementation
+    const result = await twilioClient.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
-      to: formattedPhone
-    });
-
-    console.log(`✅ SMS sent successfully (SID: ${smsResult.sid})`);
-    return { 
-      success: true, 
-      sid: smsResult.sid, 
-      status: smsResult.status 
-    };
-  } catch (error) {
-    console.error('❌ Error sending SMS:', error.message);
-    return { 
-      success: false, 
-      error: error.message,
-      code: error.code || 'UNKNOWN_ERROR'
-    };
-  }
-}
-
-/**
- * Make a voice call notification
- * @param {Object} params - Call parameters
- * @returns {Promise<Object>} - Result of call
- */
-const makeVoiceCall = async ({ phoneNumber, message }) => {
-  try {
-    // Check if Twilio credentials are configured
-    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
-      console.error('❌ Missing Twilio configuration - SID, Auth Token, or Phone Number');
-      throw new Error('Missing Twilio configuration. Please check your environment variables.');
-    }
-    
-    // Format the phone number if it doesn't start with +
-    let formattedPhoneNumber = phoneNumber;
-    if (!phoneNumber.startsWith('+')) {
-      // Add the + prefix if it's missing
-      formattedPhoneNumber = `+${phoneNumber.replace(/\D/g, '')}`;
-    }
-    
-    console.log(`📞 Attempting to make a voice call to ${formattedPhoneNumber} using Twilio...`);
-    console.log(`📱 Using Twilio phone: ${process.env.TWILIO_PHONE_NUMBER}`);
-    
-    // Initialize Twilio client here to ensure we have the latest credentials
-    const client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-    
-    // Default TwiML URL for a generic medication reminder
-    let twimlURL = 'https://handler.twilio.com/twiml/EH8ccdbd7f0b05764809dd5e3d96c7e76f';
-    
-    // If a custom message is provided, we could use a different TwiML URL or create TwiML on the fly
-    // For now, we'll just log the message
-    if (message) {
-      console.log(`📝 Voice message content: ${message}`);
-    }
-    
-    const call = await client.calls.create({
-      url: twimlURL,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: formattedPhoneNumber,
+      to: formattedNumber
     });
     
-    console.log(`✅ Voice call initiated successfully to ${formattedPhoneNumber} (SID: ${call.sid})`);
-    return { success: true, sid: call.sid, status: call.status };
+    console.log(`✅ SMS sent successfully via Twilio to ${formattedNumber} (SID: ${result.sid})`);
+    return { success: true, sid: result.sid, status: result.status };
   } catch (error) {
-    console.error('❌ Failed to make voice call:', error.message);
-    if (error.code) {
-      console.error(`❌ Twilio Error Code: ${error.code}`);
-    }
-    return { 
-      success: false, 
-      error: error.message,
-      code: error.code || 'UNKNOWN_ERROR' 
-    };
+    console.error(`❌ Error sending SMS: ${error.message}`);
+    return { success: false, error: error.message };
   }
 };
 
 /**
- * Send an email notification
- * @param {Object} params - Email parameters
+ * Send an email
+ * @param {Object} options - Email options
  * @returns {Promise<Object>} - Result of sending
  */
 const sendEmail = async ({ email, subject, html, text }) => {
   try {
-    if (!process.env.EMAIL_USER) {
-      console.error('❌ Missing email configuration');
-      throw new Error('Missing email configuration');
-    }
+    // This is a mock implementation
+    console.log(`📧 Email to ${email}:
+Subject: ${subject}
+Body: ${text}`);
     
-    const result = await emailTransporter.sendMail({
-      from: `"Health App" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject,
-      text,
-      html,
-    });
+    // In a real implementation, you would use a service like SendGrid, AWS SES, etc.
+    // const mailOptions = {
+    //   from: process.env.EMAIL_FROM,
+    //   to: email,
+    //   subject,
+    //   html,
+    //   text
+    // };
+    // const result = await transporter.sendMail(mailOptions);
     
-    console.log(`📧 Email sent to ${email}:`, subject);
-    return { success: true, messageId: result.messageId };
+    return { success: true, messageId: `mock-${Date.now()}` };
   } catch (error) {
-    console.error('❌ Failed to send email:', error);
+    console.error('Error sending email:', error);
     return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Mark a notification as read
+ * @param {string} notificationId - ID of the notification to mark as read
+ * @returns {Promise<boolean>} - Whether the operation was successful
+ */
+const markNotificationAsRead = async (notificationId) => {
+  try {
+    const result = await Notification.findByIdAndUpdate(
+      notificationId, 
+      { read: true },
+      { new: true }
+    );
+    return !!result;
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    return false;
+  }
+};
+
+/**
+ * Get count of unread notifications for a user
+ * @param {string} userId - User ID to check
+ * @returns {Promise<number>} - Count of unread notifications
+ */
+const getUnreadCount = async (userId) => {
+  try {
+    return await Notification.countDocuments({
+      userId,
+      read: false
+    });
+  } catch (error) {
+    console.error('Error getting unread count:', error);
+    return 0;
   }
 };
 
@@ -293,14 +260,14 @@ const sendAppointmentReminder = async (appointment, userProfile, reminderType = 
   try {
     // Check if we've already sent a notification for this appointment recently
     const recentNotification = await hasRecentNotification({
-      userId: appointment.userId,
+      userId: appointment.userId._id || appointment.userId,
       type: 'appointment',
       referenceId: appointment._id,
       hours: 3, // Don't send reminders more than once every 3 hours
     });
     
     if (recentNotification) {
-      console.log(`⏭️ Skipping duplicate appointment reminder for user ${appointment.userId}`);
+      console.log(`⏭️ Skipping duplicate appointment reminder for user ${appointment.userId._id || appointment.userId}`);
       return { success: true, skipped: true };
     }
     
@@ -308,7 +275,7 @@ const sendAppointmentReminder = async (appointment, userProfile, reminderType = 
     let doctorName = 'your doctor';
     if (appointment.doctor) {
       try {
-        const doctorDoc = await Doctor.findById(appointment.doctor).populate('userId', 'name');
+        const doctorDoc = appointment.doctor;
         if (doctorDoc && doctorDoc.userId) {
           // Handle both string name and object user with name property
           const name = typeof doctorDoc.userId === 'object' 
@@ -317,7 +284,7 @@ const sendAppointmentReminder = async (appointment, userProfile, reminderType = 
           doctorName = `Dr. ${name}`;
         }
       } catch (err) {
-        console.error('Error fetching doctor details:', err);
+        console.error('Error getting doctor details:', err);
       }
     }
     
@@ -378,30 +345,28 @@ const sendAppointmentReminder = async (appointment, userProfile, reminderType = 
       </div>
     `;
     
-    // Get user email from User model
+    // Get user email from appointment data or User model
     let emailResult = { success: false, skipped: true };
     try {
-      const user = await User.findById(appointment.userId);
-      if (user && user.email) {
+      const userEmail = appointment.userId.email || null;
+      
+      if (userEmail) {
         emailResult = await sendEmail({
-          email: user.email,
+          email: userEmail,
           subject: emailSubject,
           html: emailHtml,
           text: reminderMessage,
         });
+      } else {
+        console.log('No email found for user, skipping email reminder');
       }
     } catch (err) {
       console.error('Error sending appointment email reminder:', err);
     }
     
-    // Update the appointment's lastReminderSent timestamp
-    await Appointment.findByIdAndUpdate(appointment._id, {
-      lastReminderSent: new Date()
-    });
-    
     // Log the notification
     await logNotification({
-      userId: appointment.userId,
+      userId: appointment.userId._id || appointment.userId,
       type: 'appointment',
       referenceId: appointment._id,
       channel: smsResult.success ? 'sms' : (emailResult.success ? 'email' : 'failed'),
@@ -437,6 +402,8 @@ const sendAppointmentReminder = async (appointment, userProfile, reminderType = 
  */
 async function sendMedicationReminder(reminder, userProfile) {
   try {
+    console.log(`Attempting to send medication reminder for ${reminder?.medicationName || 'unknown'}`);
+    
     if (!reminder || !userProfile) {
       console.error('Missing reminder or user profile for medication reminder');
       return { success: false, error: 'Missing data' };
@@ -450,12 +417,29 @@ async function sendMedicationReminder(reminder, userProfile) {
 
     // Create message
     const message = `Reminder: It's time to take your ${reminder.medicationName} (${reminder.dosage}). Stay healthy!`;
+    console.log(`Prepared SMS message: "${message}"`);
+    
+    // Ensure phone number is formatted correctly with +91 prefix
+    let formattedPhoneNumber = phoneNumber;
+    if (!formattedPhoneNumber.startsWith('+')) {
+      formattedPhoneNumber = `+91${formattedPhoneNumber.replace(/\D/g, '')}`;
+    } else if (formattedPhoneNumber.startsWith('+1')) {
+      // Replace +1 with +91 if found
+      formattedPhoneNumber = `+91${formattedPhoneNumber.slice(2)}`;
+    }
     
     // Send SMS
-    const smsResult = await sendSMS({
-      phoneNumber: phoneNumber,
-      message: message
-    });
+    let smsResult;
+    try {
+      smsResult = await sendSMS({
+        phoneNumber: formattedPhoneNumber,
+        message: message
+      });
+      console.log(`SMS result: ${JSON.stringify(smsResult)}`);
+    } catch (smsError) {
+      console.error('Error sending SMS:', smsError);
+      smsResult = { success: false, error: smsError.message };
+    }
     
     // Check if voice call is enabled and should be made
     let callResult = { success: false, skipped: true };
@@ -469,13 +453,26 @@ async function sendMedicationReminder(reminder, userProfile) {
         }
         
         if (twilioClient) {
+          // Format phone number with +91 country code (India) if needed
+          let formattedNumber = phoneNumber;
+          if (!phoneNumber.startsWith('+')) {
+            formattedNumber = `+91${phoneNumber.replace(/\D/g, '')}`;
+          } else if (phoneNumber.startsWith('+1')) {
+            // Replace +1 with +91 if found (handle case where Twilio might be auto-formatting)
+            formattedNumber = `+91${phoneNumber.slice(2)}`;
+          }
+          
+          console.log(`Formatted phone number for voice call: ${formattedNumber}`);
+          
           // TwiML for voice call
           const twimlURL = 'https://handler.twilio.com/twiml/EH8ccdbd7f0b05764809dd5e3d96c7e76f';
           
+          // Set country code to IN (India) to override any default behavior
           const call = await twilioClient.calls.create({
             url: twimlURL,
-            to: phoneNumber,
+            to: formattedNumber,
             from: process.env.TWILIO_PHONE_NUMBER,
+            countryCode: 'IN'  // Specify India as the country
           });
           
           callResult = { 
@@ -484,7 +481,7 @@ async function sendMedicationReminder(reminder, userProfile) {
             status: call.status 
           };
           
-          console.log(`Voice call initiated for medication reminder to ${phoneNumber}`);
+          console.log(`Voice call initiated for medication reminder to ${formattedNumber}`);
         } else {
           console.error('Twilio client not available for voice call');
           callResult = { success: false, error: 'Twilio client not available' };
@@ -496,20 +493,26 @@ async function sendMedicationReminder(reminder, userProfile) {
     }
     
     // Log this notification
-    await logNotification({
-      userId: reminder.userId,
-      type: 'medication',
-      messageContent: message,
-      channel: 'sms',
-      metadata: {
-        medicationId: reminder._id,
-        medicationName: reminder.medicationName,
-        dosage: reminder.dosage,
-        time: reminder.time,
-        voiceCall: callResult.success
-      }
-    });
+    try {
+      await logNotification({
+        userId: reminder.userId,
+        type: 'medication',
+        messageContent: message,
+        channel: 'sms',
+        metadata: {
+          medicationId: reminder._id,
+          medicationName: reminder.medicationName,
+          dosage: reminder.dosage,
+          time: reminder.time,
+          voiceCall: callResult.success
+        }
+      });
+      console.log('Notification logged successfully');
+    } catch (logError) {
+      console.error('Error logging notification:', logError);
+    }
     
+    console.log(`Medication reminder processing complete for: ${reminder.medicationName}`);
     return { 
       success: smsResult.success || callResult.success,
       sms: smsResult,
@@ -694,54 +697,6 @@ async function createMedicationTakenNotification(userId, medicationName) {
  */
 async function createHealthTipNotification(userId, tip) {
   return await createNotification(userId, "healthTip", tip, "app");
-}
-
-/**
- * Mark a notification as read
- * 
- * @param {string} notificationId - The ID of the notification to mark as read
- * @returns {Promise<Object>} - The updated notification
- */
-async function markNotificationAsRead(notificationId) {
-  try {
-    await connectDB();
-    
-    const notification = await Notification.findByIdAndUpdate(
-      notificationId,
-      { 
-        status: "read",
-        readAt: new Date()
-      },
-      { new: true }
-    );
-    
-    return notification;
-  } catch (error) {
-    console.error("Error marking notification as read:", error);
-    throw error;
-  }
-}
-
-/**
- * Get count of unread notifications for a user
- * 
- * @param {string} userId - The ID of the user
- * @returns {Promise<number>} - The number of unread notifications
- */
-async function getUnreadCount(userId) {
-  try {
-    await connectDB();
-    
-    const count = await Notification.countDocuments({
-      userId,
-      status: "unread"
-    });
-    
-    return count;
-  } catch (error) {
-    console.error("Error getting unread notification count:", error);
-    throw error;
-  }
 }
 
 // Export all functions
