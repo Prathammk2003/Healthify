@@ -4,16 +4,16 @@
  * This API generates personalized nutrition plans based on user data.
  * 
  * To use AI-generated responses, you need to set up one of these API keys:
- * 1. HUGGINGFACE_API_KEY in .env.local (preferred)
- * 2. OPENAI_API_KEY in .env.local (alternative)
- * 3. GEMINI_API_KEY in .env.local (alternative)
+ * 1. OPENAI_API_KEY in .env.local (preferred)
+ * 2. GEMINI_API_KEY in .env.local (alternative)
  * 
  * If no API keys are available, the API will fall back to the built-in recommendation engine.
  */
 
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { HfInference } from '@huggingface/inference';
+// Removed Hugging Face import since we're using local models
+// import { HfInference } from '@huggingface/inference';
 import OpenAI from 'openai';
 import axios from 'axios';
 import { getRegionalCuisine } from './nutrition-helper';
@@ -22,24 +22,25 @@ import { getRegionalCuisine } from './nutrition-helper';
 const debugApiKeys = () => {
   // Load environment variables directly from process.env
   const geminiKey = process.env.GEMINI_API_KEY || '';
-  const hfKey = process.env.HUGGINGFACE_API_KEY || '';
+  // Removed Hugging Face key since we're using local models
+  // const hfKey = process.env.HUGGINGFACE_API_KEY || '';
   const openaiKey = process.env.OPENAI_API_KEY || '';
-  
+
   // Safe logging - show partial key for debugging without exposing full key
   const safeLogKey = (key) => {
     if (!key) return 'Not available';
     if (key.length <= 8) return 'Available but possibly invalid (too short)';
     return `Available: ${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
   };
-  
+
   console.log('API Key Status:');
   console.log('- Gemini API Key:', safeLogKey(geminiKey));
-  console.log('- HuggingFace API Key:', safeLogKey(hfKey));
+  // Removed Hugging Face key logging
   console.log('- OpenAI API Key:', safeLogKey(openaiKey));
-  
+
   return {
     hasGeminiKey: !!geminiKey && geminiKey.length > 10,
-    hasHfKey: !!hfKey && hfKey.length > 10,
+    // Removed Hugging Face key check
     hasOpenaiKey: !!openaiKey && openaiKey.length > 10
   };
 };
@@ -79,7 +80,7 @@ export async function POST(req) {
     console.log('Environment check:');
     console.log('NODE_ENV:', process.env.NODE_ENV);
     console.log('Has .env.local variables:', !!process.env.DATABASE_URI);
-    
+
     // Debug available API keys
     const apiKeyStatus = debugApiKeys();
     console.log('API Key Status Summary:', JSON.stringify(apiKeyStatus));
@@ -94,39 +95,69 @@ export async function POST(req) {
     // Log request (no personal data)
     console.log(`Nutrition plan request received for user with age ${userData.age}`);
 
+    // Rate limiting: Check if user has generated a plan recently (24 hours)
+    const RATE_LIMIT_HOURS = 24;
+    const userId = userData.userId; // Assuming userId is passed in request
+
+    if (userId) {
+      try {
+        const NutritionPlan = (await import('@/models/NutritionPlan')).default;
+        const recentPlan = await NutritionPlan.findOne({
+          userId,
+          createdAt: { $gte: new Date(Date.now() - RATE_LIMIT_HOURS * 60 * 60 * 1000) }
+        }).sort({ createdAt: -1 });
+
+        if (recentPlan) {
+          console.log(`Rate limit: User ${userId} already generated a plan within ${RATE_LIMIT_HOURS} hours`);
+
+          // Return the recent plan instead of generating a new one
+          return NextResponse.json({
+            success: true,
+            data: recentPlan.planData,
+            message: `You recently generated a nutrition plan. Here's your existing plan. You can generate a new plan after ${new Date(recentPlan.createdAt.getTime() + RATE_LIMIT_HOURS * 60 * 60 * 1000).toLocaleString()}.`,
+            rateLimited: true,
+            nextAvailable: new Date(recentPlan.createdAt.getTime() + RATE_LIMIT_HOURS * 60 * 60 * 1000)
+          });
+        }
+      } catch (rateLimitError) {
+        console.warn('Rate limit check failed, proceeding with generation:', rateLimitError.message);
+      }
+    }
+
     // Generate nutrition plan using AI
     const nutritionPlan = await generateAINutritionPlan(userData, apiKeyStatus, apiErrors);
 
+
     // Include API key availability and source info in response
-    const aiSource = nutritionPlan.source === 'ai' ? 'AI-generated' : 
-                    (nutritionPlan.source === 'fallback' ? 'Template-based' : 'Emergency fallback');
+    const aiSource = nutritionPlan.source === 'ai' ? 'AI-generated' :
+      (nutritionPlan.source === 'fallback' ? 'Template-based' : 'Emergency fallback');
 
     // Create diagnostic message if using fallback
     let diagnosticMessage = '';
     if (nutritionPlan.source !== 'ai') {
       diagnosticMessage = 'Using template-based generation because AI generation failed. ';
-      
+
       // Add specific reasons for each API failure
       if (apiErrors.gemini) {
         diagnosticMessage += `Gemini API failed: ${apiErrors.gemini}. `;
       }
-      
+
       if (apiErrors.openai) {
         diagnosticMessage += `OpenAI API failed: ${apiErrors.openai}. `;
       }
-      
+
       if (apiErrors.huggingface) {
         diagnosticMessage += `Hugging Face API failed: ${apiErrors.huggingface}. `;
       }
-      
+
       if (!apiKeyStatus.hasGeminiKey && !apiKeyStatus.hasOpenaiKey && !apiKeyStatus.hasHfKey) {
         diagnosticMessage += 'No valid API keys available. ';
       }
-      
+
       diagnosticMessage += 'Check server logs for detailed error information.';
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       nutritionPlan: {
         ...nutritionPlan,
         _debug: {
@@ -149,7 +180,7 @@ export async function POST(req) {
     }, { status: 200 });
   } catch (error) {
     console.error('Error processing nutrition plan request:', error);
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Server error processing your request. Please try again later.',
       status: 'error',
       timestamp: new Date().toISOString(),
@@ -165,10 +196,10 @@ async function generateAINutritionPlan(userData, apiKeyStatus, apiErrors = {}) {
   try {
     // Initialize metrics used across all approaches
     const metrics = calculateMetrics(userData);
-    
+
     console.log('API Key Status for Nutrition Plan:');
     console.log(`- Gemini: ${apiKeyStatus.hasGeminiKey ? 'Available' : 'Not available'}`);
-    console.log(`- HuggingFace: ${apiKeyStatus.hasHfKey ? 'Available' : 'Not available'}`);
+    // Removed Hugging Face key status
     console.log(`- OpenAI: ${apiKeyStatus.hasOpenaiKey ? 'Available' : 'Not available'}`);
 
     // Try Gemini API first if a key is available
@@ -194,24 +225,17 @@ async function generateAINutritionPlan(userData, apiKeyStatus, apiErrors = {}) {
           const status = error.response.status;
           console.error(`Gemini API HTTP Status: ${status}`);
           console.error('Gemini API error details:', JSON.stringify(error.response.data));
-          
+
           if (status === 429) {
             console.error('QUOTA EXCEEDED: Gemini API quota or rate limit reached');
           } else if (status === 403) {
-            console.error('AUTHENTICATION ERROR: Gemini API key may be invalid or expired');
-          } else if (status === 400) {
-            console.error('BAD REQUEST: Gemini API request format issue');
+            console.error('ACCESS DENIED: Gemini API key may be invalid or expired');
           }
-        } else if (error.request) {
-          console.error('Gemini API request failed with no response (network issue)');
         }
       }
-    } else {
-      console.log('Skipping Gemini API - no valid key available');
-      if (apiErrors) apiErrors.gemini = "No valid API key";
     }
 
-    // Try OpenAI API next if a key is available (changing order to prioritize OpenAI over HuggingFace)
+    // Try OpenAI API if a key is available and Gemini failed
     if (apiKeyStatus.hasOpenaiKey) {
       try {
         console.log('Attempting to generate nutrition plan with OpenAI API');
@@ -234,80 +258,49 @@ async function generateAINutritionPlan(userData, apiKeyStatus, apiErrors = {}) {
           const status = error.response.status;
           console.error(`OpenAI API HTTP Status: ${status}`);
           console.error('OpenAI API error details:', JSON.stringify(error.response.data));
-          
+
           if (status === 429) {
             console.error('QUOTA EXCEEDED: OpenAI API quota or rate limit reached');
+          } else if (status === 403) {
+            console.error('ACCESS DENIED: OpenAI API key may be invalid or expired');
           } else if (status === 401) {
-            console.error('AUTHENTICATION ERROR: OpenAI API key may be invalid or expired');
-          } else if (status === 400) {
-            console.error('BAD REQUEST: OpenAI API request format issue');
+            console.error('AUTHENTICATION FAILED: OpenAI API key is invalid');
           }
-        } else if (error.request) {
-          console.error('OpenAI API request failed with no response (network issue)');
         }
       }
-    } else {
-      console.log('Skipping OpenAI API - no valid key available');
-      if (apiErrors) apiErrors.openai = "No valid API key";
     }
 
-    // Try Hugging Face API last if a key is available
-    if (apiKeyStatus.hasHfKey) {
-      try {
-        console.log('Attempting to generate nutrition plan with Hugging Face API');
-        const hfResponse = await generateWithHuggingFace(userData, metrics);
-        if (hfResponse) {
-          console.log('Successfully generated nutrition plan with Hugging Face API');
-          // Format the text response first
-          const formattedText = formatNutritionResponseText(hfResponse, metrics);
-          // Then convert to the object structure
-          return formatNutritionResponseObject(formattedText, metrics);
-        } else {
-          console.log('Hugging Face API returned null response');
-          if (apiErrors) apiErrors.huggingface = "Returned null response";
-        }
-      } catch (error) {
-        console.error('Error with Hugging Face API:', error.message);
-        if (apiErrors) apiErrors.huggingface = error.message;
-        // Enhanced error logging
-        if (error.response) {
-          const status = error.response.status;
-          console.error(`Hugging Face API HTTP Status: ${status}`);
-          console.error('Hugging Face API error details:', JSON.stringify(error.response.data));
-          
-          if (status === 429) {
-            console.error('QUOTA EXCEEDED: Hugging Face API quota or rate limit reached');
-          } else if (status === 401) {
-            console.error('AUTHENTICATION ERROR: Hugging Face API key may be invalid or expired');
-          } else if (status === 400) {
-            console.error('BAD REQUEST: Hugging Face API request format issue');
-          }
-        } else if (error.request) {
-          console.error('Hugging Face API request failed with no response (network issue)');
-        }
-      }
-    } else {
-      console.log('Skipping Hugging Face API - no valid key available');
-      if (apiErrors) apiErrors.huggingface = "No valid API key";
-    }
+    // Removed Hugging Face API section since we're using local models
 
-    // Fall back to template-based generation if all AI options fail
-    console.log('All AI options failed or no API keys available, falling back to template generation');
-    return generateFallbackNutritionPlan(userData);
+    // Fallback to template-based generation if all AI APIs fail
+    console.log('All AI APIs failed, using template-based generation');
+    const templatePlan = generateFallbackNutritionPlan(userData, metrics);
+    return {
+      ...templatePlan,
+      source: 'fallback',
+      generationMethod: 'template-based'
+    };
   } catch (error) {
-    console.error('Error in generateAINutritionPlan:', error);
-    return generateFallbackNutritionPlan(userData);
+    console.error('Error in AI nutrition plan generation:', error);
+    // Emergency fallback
+    const emergencyPlan = generateFallbackNutritionPlan(userData);
+    return {
+      ...emergencyPlan,
+      source: 'emergency',
+      generationMethod: 'emergency-fallback'
+    };
   }
 }
 
 // Format the text content of the nutrition plan
 function formatNutritionResponseText(text, metrics) {
   // Clean up any model artifacts or headers
+
   let cleanedText = text.replace(/^As a professional nutritionist|^I'll provide a comprehensive|^Here is your personalized/i, '');
-  
+
   // Ensure headings are properly formatted
   const headings = ['Macronutrient Distribution', 'Meal Planning', 'Food Recommendations', 'Hydration', 'Supplement Recommendations'];
-  
+
   headings.forEach(heading => {
     // Replace variations of the heading format with a consistent one
     cleanedText = cleanedText.replace(
@@ -315,16 +308,16 @@ function formatNutritionResponseText(text, metrics) {
       `\n\n**${heading}:**\n`
     );
   });
-  
+
   // Improve bullet point formatting
   cleanedText = cleanedText.replace(/^[-*•]\s*/gm, '• ');
-  
+
   // Add metrics summary at the beginning
   const metricsSummary = `**Nutrition Plan Summary:**\n• BMI: ${metrics.bmi} (${metrics.bmiCategory})\n• Daily Calorie Target: ${metrics.dailyCalories} calories\n`;
-  
+
   // Add a disclaimer at the end
   const disclaimer = `\n\n**Disclaimer:** This nutrition plan is generated based on the information provided and general nutritional principles. It is not a substitute for professional medical or dietetic advice. Always consult with a healthcare professional before making significant changes to your diet, especially if you have health conditions.`;
-  
+
   return metricsSummary + cleanedText + disclaimer;
 }
 
@@ -387,24 +380,24 @@ function formatNutritionResponseObject(text, metrics) {
 
     // Parse the text to extract structured data
     const sections = text.split(/\n\s*\*\*[^*]+\*\*\s*:\s*\n/);
-    
+
     // First section is usually the summary with metrics
     if (sections[0] && sections[0].includes('BMI:')) {
       // Try to extract macro percentages and grams if available in the text
       const proteinMatch = text.match(/protein[^\d]+(\d+)%[^\d]*(\d+)\s*g/i);
       const carbMatch = text.match(/carb[^\d]+(\d+)%[^\d]*(\d+)\s*g/i);
       const fatMatch = text.match(/fat[^\d]+(\d+)%[^\d]*(\d+)\s*g/i);
-      
+
       if (proteinMatch) {
         structuredResponse.metrics.proteinPercentage = parseInt(proteinMatch[1], 10) || 0;
         structuredResponse.metrics.proteinGrams = parseInt(proteinMatch[2], 10) || 0;
       }
-      
+
       if (carbMatch) {
         structuredResponse.metrics.carbPercentage = parseInt(carbMatch[1], 10) || 0;
         structuredResponse.metrics.carbGrams = parseInt(carbMatch[2], 10) || 0;
       }
-      
+
       if (fatMatch) {
         structuredResponse.metrics.fatPercentage = parseInt(fatMatch[1], 10) || 0;
         structuredResponse.metrics.fatGrams = parseInt(fatMatch[2], 10) || 0;
@@ -427,7 +420,7 @@ function formatNutritionResponseObject(text, metrics) {
       if (titleMatch && titleMatch[1]) {
         structuredResponse.plan.title = titleMatch[1].trim();
       }
-      
+
       // Try to extract a description
       const descriptionMatch = text.match(/\*\*(?:Overview|Description|Introduction)\*\*:?\s*(.*?)(?=\n\s*\*\*|$)/i);
       if (descriptionMatch && descriptionMatch[1]) {
@@ -439,10 +432,10 @@ function formatNutritionResponseObject(text, metrics) {
     function extractMealItems(mealType, mealText) {
       const regex = new RegExp(`${mealType}[^:]*:?(.*?)(?=breakfast|lunch|dinner|snack|$)`, 'is');
       const match = mealText.match(regex);
-      
+
       if (match && match[1]) {
         const lines = match[1].trim().split('\n').filter(line => line.trim()).map(line => line.replace(/^[•\-*]\s*/, ''));
-        
+
         if (lines.length === 1) {
           return lines[0]; // Return as string for single item
         } else if (lines.length > 1) {
@@ -451,28 +444,28 @@ function formatNutritionResponseObject(text, metrics) {
       }
       return null;
     }
-    
+
     // Extract meal information with improved pattern matching
     const mealPlanSection = text.match(/\*\*Meal(?: Planning| Plan| Structure|s)[^*]*\*\*:?\s*\n([\s\S]*?)(?=\n\s*\*\*|$)/i);
     if (mealPlanSection && mealPlanSection[1]) {
       const mealText = mealPlanSection[1];
-      
+
       // Extract meals with improved handling
       const breakfast = extractMealItems('breakfast', mealText);
       if (breakfast) {
         structuredResponse.plan.meals.breakfast = breakfast;
       }
-      
+
       const lunch = extractMealItems('lunch', mealText);
       if (lunch) {
         structuredResponse.plan.meals.lunch = lunch;
       }
-      
+
       const dinner = extractMealItems('dinner', mealText);
       if (dinner) {
         structuredResponse.plan.meals.dinner = dinner;
       }
-      
+
       const snacks = extractMealItems('snack', mealText);
       if (snacks) {
         structuredResponse.plan.meals.snacks = Array.isArray(snacks) ? snacks : [snacks];
@@ -482,11 +475,11 @@ function formatNutritionResponseObject(text, metrics) {
     // Function to extract multiple items from sections
     function extractListItems(text) {
       if (!text) return [];
-      
+
       const lines = text.trim().split('\n')
         .filter(line => line.trim())
         .map(line => line.replace(/^[•\-*]\s*/, '').trim());
-      
+
       return lines.slice(0, 5); // Return up to 5 items
     }
 
@@ -568,12 +561,14 @@ function formatNutritionResponseObject(text, metrics) {
 }
 
 // Fallback function for when API is unavailable
-function generateFallbackNutritionPlan(userData) {
+function generateFallbackNutritionPlan(userData, metrics = null) {
   try {
-    // Calculate and gather metrics
-    const metrics = calculateMetrics(userData);
+    // Calculate and gather metrics if not provided
+    if (!metrics) {
+      metrics = calculateMetrics(userData);
+    }
     const { bmi, bmiCategory, bmiSubCategory, dailyCalories, proteinPercentage, carbPercentage, fatPercentage, proteinGrams, carbGrams, fatGrams } = metrics;
-    
+
     // Determine recommended weight goal based on health
     let weightGoalRecommendation = '';
     if (bmiCategory === 'severely underweight' || bmiCategory === 'underweight') {
@@ -583,17 +578,17 @@ function generateFallbackNutritionPlan(userData) {
     } else if (bmiCategory === 'overweight' || bmiCategory === 'obese') {
       weightGoalRecommendation = 'lose';
     }
-    
+
     // Determine if the chosen goal conflicts with health needs
     const goalConflict = userData.weightGoal !== weightGoalRecommendation;
-    
-    // Get regional cuisine
-    const cuisine = getRegionalCuisine(userData.regionalPreference);
-    
+
+    // Get regional cuisine with dietary preference filtering
+    const cuisine = getRegionalCuisine(userData.regionalPreference, userData.dietaryPreference);
+
     // Create a personalized meal plan based on BMI and goals
     let mealPlanTitle = 'Balanced Nutrition Plan';
     let mealPlanDescription = 'A balanced approach to nutrition with a mix of all food groups.';
-    
+
     if (bmiCategory === 'severely underweight' || bmiCategory === 'underweight') {
       mealPlanTitle = 'Weight Gain Nutrition Plan';
       mealPlanDescription = 'Focus on nutrient-dense, calorie-rich foods to achieve healthy weight gain.';
@@ -610,12 +605,12 @@ function generateFallbackNutritionPlan(userData) {
       mealPlanTitle = 'Lean Muscle Building Plan';
       mealPlanDescription = 'Focus on building lean muscle mass while maintaining a healthy body fat percentage.';
     }
-    
+
     // Generate a sample day meal plan
     const breakfastOption = cuisine.breakfast[Math.floor(Math.random() * cuisine.breakfast.length)];
     const lunchOption = cuisine.lunch[Math.floor(Math.random() * cuisine.lunch.length)];
     const dinnerOption = cuisine.dinner[Math.floor(Math.random() * cuisine.dinner.length)];
-    
+
     // Choose 2 random snacks
     const snackOptions = [...cuisine.snacks];
     const selectedSnacks = [];
@@ -626,32 +621,32 @@ function generateFallbackNutritionPlan(userData) {
         snackOptions.splice(randomIndex, 1);
       }
     }
-    
+
     // Generate health tips based on user's conditions
     const healthTips = [];
-    
+
     if (userData.healthConditions) {
       if (userData.healthConditions.includes('diabetes')) {
         healthTips.push('Monitor the glycemic load of your meals, not just carbohydrate content');
         healthTips.push('Consider a continuous eating pattern of smaller, more frequent meals to help stabilize blood sugar');
       }
-      
+
       if (userData.healthConditions.includes('hypertension')) {
         healthTips.push('Limit sodium to 1,500-2,300 mg daily and increase potassium-rich foods like bananas and sweet potatoes');
         healthTips.push('Consider the DASH diet approach which has been specifically designed for blood pressure management');
       }
-      
+
       if (userData.healthConditions.includes('heartDisease')) {
         healthTips.push('Focus on omega-3 rich foods like fatty fish, walnuts, and flaxseeds for heart health');
         healthTips.push('Limit saturated fat and avoid trans fats completely for cardiovascular health');
       }
-      
+
       if (userData.healthConditions.includes('highCholesterol')) {
         healthTips.push('Increase soluble fiber from sources like oats, barley, beans, and psyllium to help lower cholesterol');
         healthTips.push('Include foods with natural statins like red yeast rice and plenty of antioxidant-rich fruits and vegetables');
       }
     }
-    
+
     // Add general tips based on BMI and goals
     if (userData.weightGoal === 'lose') {
       healthTips.push('Focus on portion control and mindful eating to create a sustainable calorie deficit');
@@ -663,11 +658,11 @@ function generateFallbackNutritionPlan(userData) {
       healthTips.push('Maintain a consistent eating schedule to support metabolic health and energy levels');
       healthTips.push('Focus on nutrient density rather than calorie counting for overall health and wellbeing');
     }
-    
+
     // Generate workout and supplement recommendations based on gym routine
     let workoutRecommendation = '';
     const exerciseRecommendations = [];
-    
+
     if (userData.gymRoutine !== 'none') {
       if (userData.gymRoutine === 'strength') {
         workoutRecommendation = 'Your strength training routine should focus on compound movements with progressive overload, training each muscle group 2-3 times per week.';
@@ -719,12 +714,12 @@ function generateFallbackNutritionPlan(userData) {
       exerciseRecommendations.push('Find activities you enjoy to make exercise sustainable');
       exerciseRecommendations.push('Start with walking, swimming, or bodyweight exercises if you\'re new to fitness');
     }
-    
+
     // Generate supplement recommendations
     let proteinRecommendation = '';
     let creatineRecommendation = '';
     const otherSupplements = [];
-    
+
     if (userData.proteinPreference !== 'none') {
       if (userData.proteinPreference === 'whey') {
         proteinRecommendation = 'Whey protein is quickly digested and ideal for post-workout recovery. Consume 20-30g within 30 minutes after training for optimal muscle protein synthesis.';
@@ -740,7 +735,7 @@ function generateFallbackNutritionPlan(userData) {
     } else {
       proteinRecommendation = 'While you\'ve indicated no protein supplement preference, consider adding whole-food protein sources to your diet, especially around workout times if you\'re training regularly.';
     }
-    
+
     if (userData.creatineUse === 'yes') {
       creatineRecommendation = 'Continue with your current creatine supplementation of 3-5g daily. Consistency is key with creatine - it works through saturation of muscle stores over time.';
     } else if (userData.creatineUse === 'considering') {
@@ -748,20 +743,20 @@ function generateFallbackNutritionPlan(userData) {
     } else {
       creatineRecommendation = 'While you\'re not currently interested in creatine, it\'s worth noting it\'s one of the safest and most well-researched supplements for improving strength and power output.';
     }
-    
+
     // Add other supplement recommendations based on goals and conditions
     if (userData.gymRoutine !== 'none' && userData.workoutFrequency !== '0') {
       otherSupplements.push('Consider caffeine (200-400mg) pre-workout for improved performance, focus and reduced perceived exertion');
     }
-    
+
     if (userData.healthConditions && userData.healthConditions.includes('highCholesterol')) {
       otherSupplements.push('Plant sterols/stanols (2g daily) can help lower LDL cholesterol in conjunction with a heart-healthy diet');
     }
-    
+
     if (userData.healthConditions && userData.healthConditions.includes('heartDisease')) {
       otherSupplements.push('Omega-3 fatty acids (1-3g EPA+DHA daily) for cardiovascular health and reducing inflammation');
     }
-    
+
     // Create the structured response object
     return {
       metrics: {
@@ -800,7 +795,7 @@ function generateFallbackNutritionPlan(userData) {
     };
   } catch (error) {
     console.error('Error in generateFallbackNutritionPlan:', error);
-    
+
     // Return minimal fallback response in case of error
     return {
       metrics: {
@@ -827,14 +822,14 @@ function generateFallbackNutritionPlan(userData) {
 
 function generateSupplementRecommendations(userData) {
   const recommendations = [];
-  
+
   // Age-based recommendations
   if (userData.age > 50) {
     recommendations.push('• Vitamin D3 (1000-2000 IU daily)');
     recommendations.push('• Calcium (1000-1200 mg daily)');
     recommendations.push('• Vitamin B12 (2.4 mcg daily)');
   }
-  
+
   // Diet-based recommendations
   if (userData.dietaryPreference === 'vegan') {
     recommendations.push('• Vitamin B12 (25-100 mcg daily)');
@@ -846,37 +841,37 @@ function generateSupplementRecommendations(userData) {
     recommendations.push('• Vitamin D3 (1000 IU daily if limited sun exposure)');
     recommendations.push('• Omega-3 supplements if not consuming fish');
   }
-  
+
   // Health condition recommendations
   if (userData.healthConditions) {
     if (userData.healthConditions.includes('diabetes')) {
       recommendations.push('• Chromium (200-1000 mcg daily)');
       recommendations.push('• Alpha-lipoic acid (600-1200 mg daily)');
     }
-    
+
     if (userData.healthConditions.includes('hypertension')) {
       recommendations.push('• Magnesium (300-400 mg daily)');
       recommendations.push('• CoQ10 (100-200 mg daily)');
     }
   }
-  
+
   // BMI-based recommendations
   const heightInMeters = userData.height / 100;
   const bmi = userData.weight / (heightInMeters * heightInMeters);
-  
+
   if (bmi < 18.5) {
     recommendations.push('• Protein powder (20-25g per serving, 1-2 servings daily)');
     recommendations.push('• Multivitamin with minerals (1 daily)');
   } else if (bmi > 30) {
     recommendations.push('• Fiber supplement (5-10g daily)');
   }
-  
+
   // If no specific recommendations were made
   if (recommendations.length === 0) {
     recommendations.push('• A high-quality multivitamin appropriate for your age and gender');
     recommendations.push('• Omega-3 fatty acids (1000 mg daily) for heart and brain health');
   }
-  
+
   return recommendations.join('\n');
 }
 
@@ -885,7 +880,7 @@ function calculateMetrics(userData) {
   // Calculate BMI
   const heightInMeters = userData.height / 100;
   const bmi = +(userData.weight / (heightInMeters * heightInMeters)).toFixed(2);
-  
+
   // Calculate estimated calorie needs using Mifflin-St Jeor Equation
   let bmr;
   if (userData.gender === 'male') {
@@ -893,7 +888,7 @@ function calculateMetrics(userData) {
   } else {
     bmr = (10 * userData.weight) + (6.25 * userData.height) - (5 * userData.age) - 161;
   }
-  
+
   // Activity multipliers
   const activityMultipliers = {
     'sedentary': 1.2,
@@ -902,10 +897,10 @@ function calculateMetrics(userData) {
     'veryActive': 1.9,
     'extraActive': 2.1
   };
-  
+
   const multiplier = activityMultipliers[userData.activityLevel] || 1.55;
   const tdee = Math.round(bmr * multiplier);
-  
+
   // Determine BMI category
   let bmiCategory = '';
   let bmiSubCategory = '';
@@ -937,10 +932,10 @@ function calculateMetrics(userData) {
     bmiCategory = 'obese';
     bmiSubCategory = 'class III';
   }
-  
+
   // Adjust calories based on weight goal
   let calorieAdjustment = 0;
-  
+
   // Adjust calories based on BMI category and weight goal
   if (userData.weightGoal === 'lose') {
     if (bmiCategory === 'severely underweight') {
@@ -987,12 +982,12 @@ function calculateMetrics(userData) {
       calorieAdjustment = -350; // Moderate deficit despite "maintain" goal
     }
   }
-  
+
   const dailyCalories = tdee + calorieAdjustment;
 
   // Determine macronutrient distribution based on BMI and dietary preferences
   let proteinPercentage, carbPercentage, fatPercentage;
-  
+
   // Start with baseline distribution based on BMI category
   if (bmiCategory === 'severely underweight' || bmiCategory === 'underweight') {
     proteinPercentage = 25; // Higher protein for muscle building
@@ -1019,23 +1014,23 @@ function calculateMetrics(userData) {
       proteinPercentage = Math.min(proteinPercentage + 5, 35); // Increase protein slightly
       fatPercentage = Math.min(fatPercentage + 5, 40); // Increase fat slightly
     }
-    
+
     if (userData.healthConditions.includes('hypertension')) {
       fatPercentage = Math.max(fatPercentage - 5, 20); // Reduce fat
       proteinPercentage = Math.min(proteinPercentage + 5, 35); // Increase protein
     }
-    
+
     if (userData.healthConditions.includes('heartDisease')) {
       fatPercentage = Math.max(fatPercentage - 5, 20); // Reduce fat
       carbPercentage = Math.min(carbPercentage + 5, 55); // Increase carbs
     }
-    
+
     if (userData.healthConditions.includes('highCholesterol')) {
       fatPercentage = Math.max(fatPercentage - 7, 20); // Reduce fat further
       carbPercentage = Math.min(carbPercentage + 7, 60); // Increase carbs further
     }
   }
-  
+
   // Finally adjust for dietary preference
   if (userData.dietaryPreference === 'keto') {
     proteinPercentage = 25;
@@ -1054,12 +1049,12 @@ function calculateMetrics(userData) {
     carbPercentage = Math.min(carbPercentage + 5, 60); // Higher carbs
     fatPercentage = Math.min(fatPercentage - 2, 20); // Slightly lower fat
   }
-  
+
   // Calculate grams for each macronutrient
-  const proteinGrams = Math.round((dailyCalories * (proteinPercentage/100)) / 4);
-  const carbGrams = Math.round((dailyCalories * (carbPercentage/100)) / 4);
-  const fatGrams = Math.round((dailyCalories * (fatPercentage/100)) / 9);
-  
+  const proteinGrams = Math.round((dailyCalories * (proteinPercentage / 100)) / 4);
+  const carbGrams = Math.round((dailyCalories * (carbPercentage / 100)) / 4);
+  const fatGrams = Math.round((dailyCalories * (fatPercentage / 100)) / 9);
+
   return {
     bmi,
     bmiCategory,
@@ -1079,7 +1074,7 @@ function calculateMetrics(userData) {
 function createNutritionPrompt(userData, metrics) {
   // Create BMI-specific instructions
   let bmiSpecificInstructions = '';
-  
+
   if (metrics.bmiCategory === 'obese' || metrics.bmiCategory === 'overweight') {
     bmiSpecificInstructions = `IMPORTANT: This user's BMI of ${metrics.bmi} indicates they are ${metrics.bmiCategory}. 
 Provide a weight loss focused nutrition plan with:
@@ -1162,26 +1157,92 @@ Format the response with clear headings and bullet points for readability. Be sp
 async function generateWithGemini(userData, metrics) {
   try {
     const geminiApiKey = process.env.GEMINI_API_KEY;
-    
+
     if (!geminiApiKey) {
       console.error('No Gemini API key available');
       return null;
     }
-    
+
     console.log('Initializing Gemini API with key:', geminiApiKey.substring(0, 4) + '...' + geminiApiKey.substring(geminiApiKey.length - 4));
-    
-    // Create prompt
-    const prompt = createNutritionPrompt(userData, metrics);
-    console.log('Sending request to Gemini API with prompt length:', prompt.length);
-    
-    // Make direct REST API call to Gemini
+
+    // RAG PATTERN: Get authoritative data from dataset first
+    const { getRegionalCuisine, getHealthConditionRecommendations } = await import('./nutrition-data.js');
+    const cuisineData = getRegionalCuisine(userData.regionalPreference, userData.dietaryPreference);
+    const healthRecommendations = getHealthConditionRecommendations(userData.healthConditions || []);
+
+    // Select meals from dataset (deterministic)
+    const selectedMeals = {
+      breakfast: cuisineData.breakfast[Math.floor(Math.random() * cuisineData.breakfast.length)],
+      lunch: cuisineData.lunch[Math.floor(Math.random() * cuisineData.lunch.length)],
+      dinner: cuisineData.dinner[Math.floor(Math.random() * cuisineData.dinner.length)],
+      snacks: [
+        cuisineData.snacks[Math.floor(Math.random() * cuisineData.snacks.length)],
+        cuisineData.snacks[Math.floor(Math.random() * cuisineData.snacks.length)]
+      ]
+    };
+
+    // Create RAG prompt: Dataset + AI explanation
+    const ragPrompt = `You are a certified nutrition assistant. Your role is to EXPLAIN and PERSONALIZE the meal plan, NOT to create new meals.
+
+CRITICAL RULES (YOU MUST FOLLOW):
+1. You MUST use ONLY the meals provided in the "Authoritative Meal Plan" section below
+2. You MUST NOT add, remove, or change any meals
+3. You MUST NOT suggest alternative meals
+4. You MAY explain why these meals are good for the user
+5. You MAY provide tips on portion sizes, timing, and preparation
+6. You MAY give personalized advice based on user's goals and health conditions
+
+User Profile:
+- Age: ${userData.age} years old
+- Gender: ${userData.gender}
+- Height: ${userData.height} cm
+- Weight: ${userData.weight} kg
+- BMI: ${metrics.bmi} (${metrics.bmiCategory})
+- Activity Level: ${userData.activityLevel}
+- Dietary Preference: ${userData.dietaryPreference}
+- Regional Preference: ${userData.regionalPreference}
+- Health Conditions: ${userData.healthConditions?.join(', ') || 'None'}
+- Weight Goal: ${userData.weightGoal}
+- Daily Calorie Target: ${metrics.dailyCalories} kcal
+- Macros: ${metrics.proteinGrams}g protein, ${metrics.carbGrams}g carbs, ${metrics.fatGrams}g fat
+- Gym Routine: ${userData.gymRoutine || 'None'}
+- Workout Frequency: ${userData.workoutFrequency || 0} days/week
+
+AUTHORITATIVE MEAL PLAN (DO NOT CHANGE THESE):
+${JSON.stringify(selectedMeals, null, 2)}
+
+${healthRecommendations.tips.length > 0 ? `
+HEALTH CONDITION GUIDELINES:
+Foods to Include: ${healthRecommendations.include.join(', ')}
+Foods to Avoid: ${healthRecommendations.avoid.join(', ')}
+Important Tips:
+${healthRecommendations.tips.map((tip, i) => `${i + 1}. ${tip}`).join('\n')}
+` : ''}
+
+YOUR TASK:
+Write a friendly, conversational explanation of this meal plan. Include:
+
+1. **Why This Plan Works for You**: Explain how these specific meals align with their age, goals, and health conditions
+2. **Meal Timing**: Suggest optimal times for each meal based on their activity level
+3. **Portion Guidance**: Provide portion size recommendations for each meal
+4. **Preparation Tips**: Brief tips on healthy preparation methods
+5. **Hydration**: Daily water intake recommendation
+${userData.gymRoutine !== 'None' ? `6. **Workout Nutrition**: Pre and post-workout meal timing from the plan above` : ''}
+${userData.proteinPreference !== 'None' ? `7. **Supplement Timing**: When to take ${userData.proteinPreference} protein` : ''}
+
+Remember: Be conversational and supportive, but DO NOT suggest any meals outside the authoritative plan above.`;
+
+    console.log('Sending RAG request to Gemini API with prompt length:', ragPrompt.length);
+
+    // Make direct REST API call to Gemini 2.5 Flash (v1 endpoint - latest model)
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
       {
         contents: [
           {
+            role: "user",
             parts: [
-              { text: prompt }
+              { text: ragPrompt }
             ]
           }
         ],
@@ -1196,39 +1257,47 @@ async function generateWithGemini(userData, metrics) {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 30000 // Add 30-second timeout
+        timeout: 30000
       }
     );
-    
+
     console.log('Received response from Gemini API');
-    
+
     // Check for error conditions in the response itself
     if (response.data && response.data.error) {
       console.error('Gemini API returned an error object:', JSON.stringify(response.data.error));
-      
+
       if (response.data.error.code === 429) {
         console.error('QUOTA EXCEEDED: Gemini API quota or rate limit reached');
       } else if (response.data.error.code === 403) {
         console.error('AUTHENTICATION ERROR: Gemini API key issue');
       }
-      
+
       return null;
     }
-    
-    // Extract text from response
-    let responseText = '';
-    if (response.data && 
-        response.data.candidates && 
-        response.data.candidates.length > 0 && 
-        response.data.candidates[0].content &&
-        response.data.candidates[0].content.parts &&
-        response.data.candidates[0].content.parts.length > 0) {
-      responseText = response.data.candidates[0].content.parts[0].text;
+
+    // Extract AI explanation from response
+    let aiExplanation = '';
+    if (response.data &&
+      response.data.candidates &&
+      response.data.candidates.length > 0 &&
+      response.data.candidates[0].content &&
+      response.data.candidates[0].content.parts &&
+      response.data.candidates[0].content.parts.length > 0) {
+      aiExplanation = response.data.candidates[0].content.parts[0].text;
     }
-    
-    if (responseText) {
-      console.log('Successfully extracted text from Gemini response:', responseText.substring(0, 100) + '...');
-      return responseText;
+
+    if (aiExplanation) {
+      console.log('Successfully extracted AI explanation from Gemini response');
+
+      // Return RAG response: Data + AI explanation
+      return {
+        meals: selectedMeals,  // Authoritative data from dataset
+        aiExplanation,         // AI conversational layer
+        metrics,               // Calculated metrics
+        healthRecommendations, // Health condition guidelines
+        source: 'rag-gemini'   // Indicates RAG pattern used
+      };
     } else {
       console.error('Failed to extract text from Gemini response:', JSON.stringify(response.data).substring(0, 200));
       console.error('Gemini API response structure is not as expected');
@@ -1236,7 +1305,7 @@ async function generateWithGemini(userData, metrics) {
     }
   } catch (error) {
     console.error('Error in generateWithGemini:', error.message);
-    
+
     // More detailed error reporting
     if (error.response) {
       // The request was made and the server responded with a status code
@@ -1244,7 +1313,7 @@ async function generateWithGemini(userData, metrics) {
       console.error(`Gemini API HTTP Status: ${error.response.status}`);
       console.error('Gemini API response headers:', JSON.stringify(error.response.headers));
       console.error('Gemini API error data:', JSON.stringify(error.response.data));
-      
+
       if (error.response.status === 429) {
         console.error('QUOTA EXCEEDED: Gemini API quota or rate limit reached. Consider upgrading your API plan or waiting before making more requests.');
       } else if (error.response.status === 403) {
@@ -1260,100 +1329,11 @@ async function generateWithGemini(userData, metrics) {
       // Something happened in setting up the request that triggered an Error
       console.error('Gemini API error during request setup:', error.message);
     }
-    
+
     if (error.code === 'ECONNABORTED') {
       console.error('Gemini API request timed out. The server took too long to respond.');
     }
-    
-    console.error('Error stack:', error.stack);
-    return null;
-  }
-}
 
-// Generate plan using Hugging Face API
-async function generateWithHuggingFace(userData, metrics) {
-  try {
-    const hfApiKey = process.env.HUGGINGFACE_API_KEY;
-    
-    if (!hfApiKey) {
-      console.error('No Hugging Face API key available');
-      return null;
-    }
-    
-    console.log('Initializing Hugging Face API with key:', hfApiKey.substring(0, 4) + '...' + hfApiKey.substring(hfApiKey.length - 4));
-    
-    // Create prompt
-    const prompt = createNutritionPrompt(userData, metrics);
-    console.log('Sending request to Hugging Face API with prompt length:', prompt.length);
-    
-    // Configure HuggingFace client with timeout
-    const hf = new HfInference(hfApiKey);
-    
-    // Set request options
-    const options = {
-      use_cache: true,
-      wait_for_model: true
-    };
-    
-    // Set timeout using AbortController
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout
-    
-    try {
-      const response = await hf.textGeneration({
-        model: "mistralai/Mistral-7B-Instruct-v0.2",
-        inputs: `<s>[INST] ${prompt} [/INST]`,
-        parameters: {
-          max_new_tokens: 2048,
-          temperature: 0.7,
-          top_p: 0.95,
-          repetition_penalty: 1.15
-        },
-        options: {
-          ...options,
-          signal: controller.signal
-        }
-      });
-      
-      clearTimeout(timeoutId);
-      
-      console.log('Received response from Hugging Face API');
-      
-      if (response && response.generated_text) {
-        // Clean up the response - extract everything after the instruction tag if present
-        const cleanText = response.generated_text.replace(/^.*?\[\/INST\]\s*/s, '');
-        console.log('Successfully extracted text from Hugging Face response:', cleanText.substring(0, 100) + '...');
-        return cleanText;
-      } else {
-        console.error('Hugging Face API response missing generated_text:', JSON.stringify(response));
-        console.error('Hugging Face API response structure is not as expected');
-        return null;
-      }
-    } catch (innerError) {
-      clearTimeout(timeoutId);
-      throw innerError; // Re-throw to be caught by outer try/catch
-    }
-  } catch (error) {
-    console.error('Error in generateWithHuggingFace:', error.message);
-    
-    // More detailed error reporting
-    if (error.name === 'AbortError') {
-      console.error('TIMEOUT: Hugging Face API request timed out after 30 seconds');
-    } else if (error.status === 429) {
-      console.error('QUOTA EXCEEDED: Hugging Face API rate limit reached or insufficient quota');
-      console.error('Consider upgrading your plan or waiting before making more requests');
-    } else if (error.status === 401 || error.status === 403) {
-      console.error('AUTHENTICATION ERROR: Hugging Face API key is invalid, expired, or unauthorized for this model');
-    } else if (error.status === 503) {
-      console.error('SERVICE UNAVAILABLE: Hugging Face model server may be overloaded or down');
-    } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-      console.error('NETWORK ERROR: Unable to connect to Hugging Face API - check internet connection');
-    } else {
-      console.error('UNKNOWN HUGGING FACE ERROR:', error);
-      if (error.status) console.error('Status code:', error.status);
-      if (error.response) console.error('Response:', JSON.stringify(error.response));
-    }
-    
     console.error('Error stack:', error.stack);
     return null;
   }
@@ -1363,18 +1343,18 @@ async function generateWithHuggingFace(userData, metrics) {
 async function generateWithOpenAI(userData, metrics) {
   try {
     const openaiApiKey = process.env.OPENAI_API_KEY;
-    
+
     if (!openaiApiKey) {
       console.error('No OpenAI API key available');
       return null;
     }
-    
+
     console.log('Initializing OpenAI API with key:', openaiApiKey.substring(0, 4) + '...' + openaiApiKey.substring(openaiApiKey.length - 4));
-    
+
     // Create prompt
     const prompt = createNutritionPrompt(userData, metrics);
     console.log('Sending request to OpenAI API with prompt length:', prompt.length);
-    
+
     // Make direct REST API call to OpenAI
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
@@ -1382,11 +1362,11 @@ async function generateWithOpenAI(userData, metrics) {
         model: "gpt-3.5-turbo",
         messages: [
           {
-            role: "system", 
+            role: "system",
             content: "You are a professional nutritionist and dietitian. Provide detailed, practical nutrition advice tailored to the user's profile."
           },
           {
-            role: "user", 
+            role: "user",
             content: prompt
           }
         ],
@@ -1402,13 +1382,13 @@ async function generateWithOpenAI(userData, metrics) {
         timeout: 30000 // Add 30-second timeout
       }
     );
-    
+
     console.log('Received response from OpenAI API');
-    
+
     // Check for error conditions in the response itself
     if (response.data && response.data.error) {
       console.error('OpenAI API returned an error object:', JSON.stringify(response.data.error));
-      
+
       // Check for specific OpenAI error types
       if (response.data.error.type === 'insufficient_quota') {
         console.error('QUOTA EXCEEDED: OpenAI API quota or credits depleted');
@@ -1417,16 +1397,16 @@ async function generateWithOpenAI(userData, metrics) {
       } else if (response.data.error.type === 'authentication_error') {
         console.error('AUTHENTICATION ERROR: OpenAI API key is invalid or expired');
       }
-      
+
       return null;
     }
-    
+
     // Extract text from response
-    if (response.data && 
-        response.data.choices && 
-        response.data.choices.length > 0 && 
-        response.data.choices[0].message &&
-        response.data.choices[0].message.content) {
+    if (response.data &&
+      response.data.choices &&
+      response.data.choices.length > 0 &&
+      response.data.choices[0].message &&
+      response.data.choices[0].message.content) {
       const responseText = response.data.choices[0].message.content;
       console.log('Successfully extracted text from OpenAI response:', responseText.substring(0, 100) + '...');
       return responseText;
@@ -1437,7 +1417,7 @@ async function generateWithOpenAI(userData, metrics) {
     }
   } catch (error) {
     console.error('Error in generateWithOpenAI:', error.message);
-    
+
     // More detailed error reporting
     if (error.response) {
       // The request was made and the server responded with a status code
@@ -1445,7 +1425,7 @@ async function generateWithOpenAI(userData, metrics) {
       console.error(`OpenAI API HTTP Status: ${error.response.status}`);
       console.error('OpenAI API response headers:', JSON.stringify(error.response.headers));
       console.error('OpenAI API error data:', JSON.stringify(error.response.data));
-      
+
       if (error.response.status === 429) {
         console.error('QUOTA EXCEEDED: OpenAI API rate limit reached or insufficient quota. Consider upgrading your plan or waiting before making more requests.');
       } else if (error.response.status === 401) {
@@ -1463,12 +1443,12 @@ async function generateWithOpenAI(userData, metrics) {
       // Something happened in setting up the request that triggered an Error
       console.error('OpenAI API error during request setup:', error.message);
     }
-    
+
     if (error.code === 'ECONNABORTED') {
       console.error('OpenAI API request timed out. The server took too long to respond.');
     }
-    
+
     console.error('Error stack:', error.stack);
     return null;
   }
-} 
+}

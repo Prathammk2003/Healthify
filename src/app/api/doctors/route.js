@@ -2,8 +2,9 @@ import { connectDB } from '@/lib/db';
 import Doctor from '@/models/Doctor';
 import User from '@/models/User';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+// Removed direct jwt import since we're using validateJWT
 import { NextResponse } from 'next/server';
+import { validateJWT } from '@/lib/auth-utils'; // Added validateJWT import
 
 export async function POST(req) {
   try {
@@ -37,20 +38,29 @@ export async function GET(req) {
   try {
     await connectDB();
 
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized: No token provided' }, { status: 401 });
+    // Validate authentication using our utility function
+    const user = await validateJWT(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized: No valid token provided' }, { status: 401 });
     }
 
-    const token = authHeader.split(' ')[1];
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (error) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
+    // Find the doctor document for this user
+    let doctor = await Doctor.findOne({ userId: user._id }).populate('patients');
+    
+    // If no doctor profile exists and the user is a doctor, create one
+    if (!doctor && user.role === 'doctor') {
+      console.log(`Creating new doctor profile for user ${user._id}`);
+      doctor = new Doctor({ 
+        userId: user._id,
+        specialization: 'General Physician',
+        patients: []
+      });
+      await doctor.save();
+      
+      // Re-populate the patients field
+      doctor = await Doctor.findOne({ userId: user._id }).populate('patients');
     }
-
-    const doctor = await Doctor.findOne({ userId: decoded.id }).populate('patients');
+    
     if (!doctor) {
       return NextResponse.json({ error: 'Doctor not found' }, { status: 404 });
     }

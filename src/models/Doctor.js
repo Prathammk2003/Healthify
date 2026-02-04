@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { DOCTOR_SPECIALIZATIONS } from '../constants/specializations.mjs';
+import { DOCTOR_SPECIALIZATIONS } from '../constants/specializations.js';
 
 // Define available specializations using imported constant
 const SPECIALIZATIONS = DOCTOR_SPECIALIZATIONS;

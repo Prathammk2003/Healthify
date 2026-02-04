@@ -3,33 +3,38 @@ import Doctor from '@/models/Doctor';
 import User from '@/models/User';
 import UserProfile from '@/models/UserProfile';
 import { NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
+import { validateJWT } from '@/lib/auth-utils'; // Added validateJWT import
 
 export async function GET(request) {
   try {
     await connectDB();
     console.log('Fetching doctor patients');
 
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Validate authentication using our utility function
+    const user = await validateJWT(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized: No token provided' }, { status: 401 });
     }
 
-    const token = authHeader.split(' ')[1];
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (error) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
-    }
-
-    const userId = decoded.id;
+    const userId = user._id;
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized: User ID missing' }, { status: 401 });
     }
 
     // Find the doctor document for this user
-    const doctor = await Doctor.findOne({ userId });
+    let doctor = await Doctor.findOne({ userId });
+    
+    // If no doctor profile exists and the user is a doctor, create one
+    if (!doctor && user.role === 'doctor') {
+      console.log(`Creating new doctor profile for user ${user._id}`);
+      doctor = new Doctor({ 
+        userId: user._id,
+        specialization: 'General Physician',
+        patients: []
+      });
+      await doctor.save();
+    }
+    
     if (!doctor) {
       return NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 });
     }
@@ -79,4 +84,4 @@ export async function GET(request) {
       patients: []
     }, { status: 500 });
   }
-} 
+}

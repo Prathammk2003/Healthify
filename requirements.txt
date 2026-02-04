@@ -1,0 +1,39 @@
+# Medical Search Engine Dependencies (Windows-friendly, CPU-only)
+# Install with:
+#  - Use Python 3.11 for best compatibility
+#  - python -m pip install --upgrade pip setuptools wheel
+#  - pip install -r requirements.txt
+
+# Core dependencies
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.2
+joblib==1.4.2
+pillow==11.0.0
+python-dotenv==1.0.1
+
+# Database (optional)
+pymongo==4.9.2
+motor==3.6.0
+
+# TensorFlow (CPU-only) used by src/lib/model-predictor.py
+tensorflow-cpu==2.15.0
+
+tf2onnx==1.16.1
+
+# Optional: Uncomment ONLY if you truly need PyTorch in your Python code
+# torch==2.3.1
+# torchvision==0.18.1
+
+# ONNX conversion tools
+skl2onnx==1.17.0
+onnxmltools==1.12.0
+onnxruntime==1.18.1
+onnx==1.16.1
+
+# Intentionally excluded per local datasets/HF-free setup:
+# - transformers
+# - sentence-transformers
+# - huggingface-hub
+# - clip-by-openai
+# - faiss-cpu / faiss-gpu (often problematic on Windows)

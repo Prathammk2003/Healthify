@@ -1,21 +1,61 @@
 import { connectDB } from '@/lib/db';
 import Doctor from '@/models/Doctor';
 import { NextResponse } from 'next/server';
-import { verifyJwtToken } from '@/lib/auth';
+import { validateJWT } from '@/lib/auth-utils'; // Added validateJWT import
 
-export async function PUT(request) {
+export async function GET(request) {
   try {
-    // Get token from Authorization header
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Validate authentication using our utility function
+    const user = await validateJWT(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const token = authHeader.split(' ')[1];
-    const decoded = await verifyJwtToken(token);
+    // Connect to database
+    await connectDB();
     
-    if (!decoded || !decoded.id) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    // Find doctor by userId
+    let doctor = await Doctor.findOne({ userId: user._id });
+    
+    // If no doctor profile exists and the user is a doctor, create one
+    if (!doctor && user.role === 'doctor') {
+      console.log(`Creating new doctor profile for user ${user._id}`);
+      doctor = new Doctor({ 
+        userId: user._id,
+        specialization: 'General Physician',
+        patients: []
+      });
+      await doctor.save();
+    }
+    
+    if (!doctor) {
+      return NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ 
+      doctor: {
+        _id: doctor._id,
+        userId: doctor.userId,
+        specialization: doctor.specialization,
+        secondarySpecializations: doctor.secondarySpecializations,
+        qualifications: doctor.qualifications,
+        yearsOfExperience: doctor.yearsOfExperience,
+        bio: doctor.bio,
+        patients: doctor.patients
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching doctor profile:', error);
+    return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 });
+  }
+}
+
+export async function PUT(request) {
+  try {
+    // Validate authentication using our utility function
+    const user = await validateJWT(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Connect to database
@@ -30,7 +70,7 @@ export async function PUT(request) {
     }
     
     // Find doctor by userId
-    let doctor = await Doctor.findOne({ userId: decoded.id });
+    let doctor = await Doctor.findOne({ userId: user._id });
     
     if (!doctor) {
       return NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 });
@@ -59,4 +99,4 @@ export async function PUT(request) {
     console.error('Error updating doctor profile:', error);
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
   }
-} 
+}

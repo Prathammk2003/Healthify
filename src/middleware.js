@@ -12,12 +12,21 @@ export function middleware(request) {
     '/set-password',
     '/forgot-password',
     '/reset-password',
+    '/auth/callback', // OAuth callback page
+    '/auth/success', // OAuth success page
     '/api/auth/login',
     '/api/auth/register',
     '/api/auth/verify-email',
     '/api/auth/resend-verification',
     '/api/auth/logout',
     '/api/auth/check-auth',
+    '/api/auth/callback',
+    '/api/auth/signin',
+    '/api/auth/signout',
+    '/api/auth/session',
+    '/api/auth/providers',
+    '/api/auth/csrf',
+    '/api/auth/error',
     '/',
     '/about',
     '/contact',
@@ -40,7 +49,10 @@ export function middleware(request) {
   const isApiRoute = pathname.startsWith('/api/');
   const isPublicApiRoute = isApiRoute && (
     pathname.startsWith('/api/auth/') ||
-    pathname === '/api/health'
+    pathname === '/api/health' ||
+    pathname === '/api/models' ||
+    pathname.startsWith('/api/models/') ||
+    pathname === '/api/nutrition'
   );
   
   // If it's a public route, API route or static asset, allow the request
@@ -51,19 +63,26 @@ export function middleware(request) {
   // Check for authentication token in cookies
   const authToken = request.cookies.get('token')?.value;
   
+  // Check for NextAuth session tokens
+  const nextAuthToken = request.cookies.get('next-auth.session-token')?.value || 
+                       request.cookies.get('__Secure-next-auth.session-token')?.value ||
+                       request.cookies.get('next-auth.csrf-token')?.value;
+  
   // Check for authentication in localStorage/sessionStorage via headers
   // This is a fallback since headers can contain auth info from client-side
   const authHeader = request.headers.get('authorization');
   const hasAuthHeader = authHeader && authHeader.startsWith('Bearer ');
   
-  // If no token is found and it's not a public route, redirect to login
-  if (!authToken && !hasAuthHeader) {
-    // Create the URL to redirect to
+  // If no token is found and it's not a public route
+  if (!authToken && !nextAuthToken && !hasAuthHeader) {
+    // For API routes, return 401 instead of redirecting
+    if (isApiRoute) {
+      return NextResponse.json({ error: 'Unauthorized: Authentication required' }, { status: 401 });
+    }
+    
+    // For non-API routes, redirect to login
     const loginUrl = new URL('/login', request.url);
-    
-    // Add the original URL as a query parameter so we can redirect back after login
     loginUrl.searchParams.set('callbackUrl', encodeURIComponent(request.url));
-    
     return NextResponse.redirect(loginUrl);
   }
   
@@ -82,4 +101,4 @@ export const config = {
      */
     '/((?!_next|favicon.ico|images|assets).*)',
   ],
-}; 
+};

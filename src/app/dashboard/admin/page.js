@@ -1,7 +1,8 @@
 'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import {
   Table,
@@ -45,6 +46,19 @@ import {
   XCircleIcon,
   CheckCircleIcon,
   RefreshCw,
+  Users,
+  Settings,
+  Shield,
+  Crown,
+  Activity,
+  TrendingUp,
+  Calendar,
+  Heart,
+  Stethoscope,
+  Target,
+  Sparkles,
+  Search,
+  Filter
 } from 'lucide-react';
 import Loader from '@/components/Loader';
 
@@ -296,59 +310,167 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-slate-800 dark:to-purple-900 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
+        <div className="absolute top-40 left-40 w-80 h-80 bg-gradient-to-br from-cyan-400/20 to-blue-400/20 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
+        
+        {/* Floating particles */}
+        <div className="particles">
+          {/* Particles will be rendered after client hydration to prevent mismatch */}
+        </div>
+        
+        {/* Grid Pattern */}
+        <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-[0.02] [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]"></div>
+      </div>
+
+      <div className="relative z-10 p-6 max-w-7xl mx-auto space-y-8">
+        {/* Enhanced Header */}
+        <div className="group relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-600 via-blue-600 to-purple-600 p-8 text-white shadow-2xl hover:shadow-3xl transition-all duration-500">
+          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-all duration-500"></div>
+          
+          {/* Animated background pattern */}
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+          </div>
+          
+          <div className="relative z-10">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-sm hover:bg-white/30 transition-all duration-300 hover:scale-110">
+                    <Crown className="h-8 w-8 text-white animate-pulse" />
+                  </div>
+                  <div>
+                    <h1 className="text-5xl font-bold mb-2 text-shimmer">Admin Control Center</h1>
+                    <p className="text-xl text-white/90">
+                      Comprehensive system management and user administration
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6 text-white/80">
+                  <div className="flex items-center gap-2 hover:text-white transition-colors">
+                    <Shield className="h-5 w-5" />
+                    <span>Secure Access</span>
+                  </div>
+                  <div className="flex items-center gap-2 hover:text-blue-200 transition-colors">
+                    <Activity className="h-5 w-5 text-blue-300" />
+                    <span>System Active</span>
+                  </div>
+                  <div className="flex items-center gap-2 hover:text-purple-200 transition-colors">
+                    <Target className="h-5 w-5 text-purple-300" />
+                    <span>{users.length || 0} Total Users</span>
+                  </div>
+                </div>
+              </div>
+              <div className="hidden lg:block">
+                <div className="relative">
+                  <div className="w-32 h-32 bg-white/10 rounded-full backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-105">
+                    <Settings className="h-16 w-16 text-white animate-spin-slow" />
+                  </div>
+                  {/* Pulse rings */}
+                  <div className="absolute inset-0 rounded-full border-2 border-white/20 animate-pulse-ring"></div>
+                  <div className="absolute inset-2 rounded-full border border-white/10 animate-pulse-ring" style={{animationDelay: '1s'}}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Enhanced floating elements */}
+          <div className="absolute top-4 right-4 opacity-20">
+            <div className="w-20 h-20 border-2 border-white rounded-full animate-ping"></div>
+          </div>
+          <div className="absolute bottom-4 left-4 opacity-20">
+            <div className="w-16 h-16 border border-white rounded-full animate-bounce"></div>
+          </div>
+          <div className="absolute top-1/2 right-1/4 opacity-10">
+            <div className="w-8 h-8 bg-white rounded-full animate-float"></div>
+          </div>
+        </div>
       {successMessage && (
-        <div className="mb-4 flex items-center rounded-lg bg-green-100 p-4 text-green-700">
-          <CheckCircleIcon className="mr-2 h-5 w-5" />
-          <span>{successMessage}</span>
-          <button 
-            className="ml-auto text-green-500 hover:text-green-700"
-            onClick={() => setSuccessMessage('')}
-          >
-            <XCircleIcon className="h-5 w-5" />
-          </button>
+        <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 p-4 text-white shadow-lg hover:shadow-xl transition-all duration-300">
+          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors"></div>
+          <div className="relative z-10 flex items-center">
+            <CheckCircleIcon className="mr-3 h-5 w-5 animate-bounce" />
+            <span className="font-medium flex-1">{successMessage}</span>
+            <button 
+              className="ml-4 text-emerald-200 hover:text-white transition-colors p-1 rounded-full hover:bg-white/20"
+              onClick={() => setSuccessMessage('')}
+            >
+              <XCircleIcon className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       )}
 
       {error && (
-        <div className="mb-4 flex items-center rounded-lg bg-red-100 p-4 text-red-700">
-          <AlertTriangle className="mr-2 h-5 w-5" />
-          <span>{error}</span>
-          <button 
-            className="ml-auto text-red-500 hover:text-red-700"
-            onClick={() => setError(null)}
-          >
-            <XCircleIcon className="h-5 w-5" />
-          </button>
+        <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-red-500 to-pink-500 p-4 text-white shadow-lg hover:shadow-xl transition-all duration-300">
+          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors"></div>
+          <div className="relative z-10 flex items-center">
+            <AlertTriangle className="mr-3 h-5 w-5 animate-pulse" />
+            <span className="font-medium flex-1">{error}</span>
+            <button 
+              className="ml-4 text-red-200 hover:text-white transition-colors p-1 rounded-full hover:bg-white/20"
+              onClick={() => setError(null)}
+            >
+              <XCircleIcon className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       )}
 
-      <Card className="mb-8">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-gray-900">User Management</CardTitle>
-          <CardDescription className="text-gray-600">
-            Manage all users in the system. Create, edit, or delete users.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full sm:w-64">
+      {/* Enhanced User Management Card */}
+      <div className="group relative overflow-hidden rounded-3xl bg-white/70 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl transition-all duration-500">
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-500/5 via-blue-500/5 to-purple-500/5 group-hover:from-slate-500/10 group-hover:via-blue-500/10 group-hover:to-purple-500/10 transition-all duration-500"></div>
+        
+        {/* Floating background elements */}
+        <div className="absolute top-4 right-4 w-20 h-20 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full animate-float"></div>
+        <div className="absolute bottom-4 left-4 w-16 h-16 bg-gradient-to-br from-purple-400/10 to-pink-400/10 rounded-full animate-float" style={{animationDelay: '1s'}}></div>
+        
+        <div className="relative z-10 p-8">
+          {/* Enhanced Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-3xl font-bold bg-gradient-to-r from-slate-600 to-blue-600 bg-clip-text text-transparent mb-2 group-hover:from-slate-700 group-hover:to-blue-700 transition-all duration-300">
+                User Management
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
+                Manage all users in the system. Create, edit, or delete user accounts.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="group/icon relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-slate-500 to-blue-500 rounded-xl opacity-0 group-hover/icon:opacity-20 transition-opacity duration-300"></div>
+                <div className="relative p-3 bg-gradient-to-r from-slate-500 to-blue-500 rounded-xl group-hover/icon:scale-110 transition-transform duration-300">
+                  <Users className="h-6 w-6 text-white" />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Enhanced Search and Controls */}
+          <div className="mb-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:w-80">
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl opacity-0 focus-within:opacity-100 transition-opacity duration-300"></div>
               <Input
-                placeholder="Search users..."
+                placeholder="Search users by name, email, or role..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-12 h-12 rounded-xl border-gray-200/50 bg-white/80 backdrop-blur-sm focus:border-blue-300 focus:ring-2 focus:ring-blue-200/50 transition-all duration-300"
               />
-              <UserIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Button 
                 variant="outline" 
-                size="sm"
+                size="default"
                 onClick={fetchUsers}
                 disabled={loading}
+                className="group/btn h-12 px-6 bg-white/80 backdrop-blur-sm border-gray-200/50 hover:bg-blue-50 hover:border-blue-300 transition-all duration-300 hover:scale-105"
               >
-                <RefreshCw className="mr-1 h-4 w-4" />
+                <RefreshCw className={`mr-2 h-4 w-4 transition-transform duration-300 ${loading ? 'animate-spin' : 'group-hover/btn:rotate-180'}`} />
                 Refresh
               </Button>
               <Button 
@@ -361,86 +483,141 @@ export default function AdminDashboard() {
                   });
                   setIsCreateDialogOpen(true);
                 }}
+                className="group/btn h-12 px-6 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white border-0 transition-all duration-300 hover:scale-105 hover:shadow-lg"
               >
-                <UserPlusIcon className="mr-1 h-4 w-4" />
+                <UserPlusIcon className="mr-2 h-4 w-4 group-hover/btn:scale-110 transition-transform" />
                 Add User
               </Button>
             </div>
           </div>
 
+          {/* Enhanced Table Section */}
           {loading ? (
-            <div className="flex h-64 items-center justify-center">
-              <Loader />
+            <div className="relative rounded-2xl bg-white/50 backdrop-blur-sm border border-gray-200/50 p-12">
+              <div className="flex flex-col items-center justify-center text-center">
+                <div className="relative mb-6">
+                  <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                  <div className="absolute inset-0 w-16 h-16 border-4 border-purple-300 border-t-transparent rounded-full animate-ping mx-auto opacity-20"></div>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-2">Loading Users</h3>
+                <p className="text-gray-600 dark:text-gray-400">Fetching user data from the system...</p>
+              </div>
             </div>
           ) : (
             <>
               {(!users || users.length === 0) ? (
-                <div className="flex h-64 flex-col items-center justify-center text-center">
-                  <InfoIcon className="mb-2 h-12 w-12 text-gray-300" />
-                  <p className="text-gray-500">No users found</p>
+                <div className="relative rounded-2xl bg-white/50 backdrop-blur-sm border border-gray-200/50 p-12">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className="relative mb-6">
+                      <div className="w-24 h-24 bg-gradient-to-r from-slate-500 to-blue-500 rounded-full flex items-center justify-center mx-auto relative overflow-hidden">
+                        <InfoIcon className="h-12 w-12 text-white relative z-10" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 animate-shimmer"></div>
+                      </div>
+                      <div className="absolute inset-0 w-24 h-24 mx-auto border-2 border-blue-300 rounded-full animate-pulse-ring"></div>
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-3">No users found</h3>
+                    <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-md">Get started by creating your first user account in the system</p>
+                  </div>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredUsers && filteredUsers.length > 0 ? (
-                        filteredUsers.map((user) => (
-                          <TableRow key={user._id}>
-                            <TableCell className="font-medium">{user.name}</TableCell>
-                            <TableCell>{user.email}</TableCell>
-                            <TableCell>
-                              {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                            </TableCell>
-                            <TableCell>
-                              {user.isAdmin ? "Admin" : "Standard"}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  onClick={() => handleEditUser(user)}
-                                  disabled={user._id === userId}
+                <div className="relative rounded-2xl bg-white/50 backdrop-blur-sm border border-gray-200/50 overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5"></div>
+                  <div className="relative z-10 overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-gray-200/50 hover:bg-gray-50/50">
+                          <TableHead className="font-semibold text-gray-700">Name</TableHead>
+                          <TableHead className="font-semibold text-gray-700">Email</TableHead>
+                          <TableHead className="font-semibold text-gray-700">Role</TableHead>
+                          <TableHead className="font-semibold text-gray-700">Status</TableHead>
+                          <TableHead className="text-right font-semibold text-gray-700">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredUsers && filteredUsers.length > 0 ? (
+                          filteredUsers.map((user, index) => (
+                            <TableRow 
+                              key={user._id} 
+                              className="group border-gray-200/50 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-purple-50/50 transition-all duration-300"
+                              style={{animationDelay: `${index * 0.05}s`}}
+                            >
+                              <TableCell className="font-medium text-gray-900 group-hover:text-blue-700 transition-colors">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-semibold group-hover:scale-110 transition-transform duration-300">
+                                    {user.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  {user.name}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-gray-600 group-hover:text-gray-800 transition-colors">{user.email}</TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant="outline" 
+                                  className={`capitalize font-medium ${
+                                    user.role === 'admin' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+                                    user.role === 'doctor' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                    'bg-green-100 text-green-700 border-green-200'
+                                  } group-hover:scale-105 transition-transform duration-200`}
                                 >
-                                  Edit
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  className="text-red-500"
-                                  onClick={() => handleDeleteUser(user)}
-                                  disabled={user._id === userId}
+                                  {user.role}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant="outline" 
+                                  className={`font-medium ${
+                                    user.isAdmin ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-gray-100 text-gray-700 border-gray-200'
+                                  } group-hover:scale-105 transition-transform duration-200`}
                                 >
-                                  Delete
-                                </Button>
+                                  {user.isAdmin ? "Admin" : "Standard"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={() => handleEditUser(user)}
+                                    disabled={user._id === userId}
+                                    className="group/edit h-8 px-3 hover:bg-blue-100 hover:text-blue-700 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <PencilIcon className="h-3 w-3 mr-1 group-hover/edit:rotate-12 transition-transform" />
+                                    Edit
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    className="group/delete h-8 px-3 text-red-500 hover:bg-red-100 hover:text-red-700 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onClick={() => handleDeleteUser(user)}
+                                    disabled={user._id === userId}
+                                  >
+                                    <TrashIcon className="h-3 w-3 mr-1 group-hover/delete:animate-bounce" />
+                                    Delete
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={5} className="h-24 text-center">
+                              <div className="text-gray-500 dark:text-gray-400">
+                                <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                <p>No users match your search criteria</p>
+                                <p className="text-sm">Try adjusting your search terms</p>
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={5} className="h-24 text-center">
-                            No users match your search
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               )}
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Create User Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -633,6 +810,7 @@ export default function AdminDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 } 

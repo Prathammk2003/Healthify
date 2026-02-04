@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useSession, signOut } from 'next-auth/react';
 
 // Create a simple cookie utility
 const Cookies = {
@@ -40,7 +41,20 @@ const AuthContext = createContext({
   verifyToken: () => false,
 });
 
+// Export AuthContext for the useAuth hook
+export { AuthContext };
+
+// Create a useAuth hook for easier consumption of the AuthContext
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
 export function AuthProvider({ children }) {
+  const { data: session, status } = useSession();
   const [authState, setAuthState] = useState({
     isAuthenticated: false,
     userId: null,
@@ -91,7 +105,110 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    // Skip in SSR context
+    // Handle NextAuth session
+    if (status === 'loading') return; // Still loading
+    
+    if (status === 'authenticated' && session?.user) {
+      // NextAuth session is active - generate a JWT token for API calls
+      const generateJWTForNextAuth = async () => {
+        try {
+          const response = await fetch('/api/auth/oauth-token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId: session.user.id,
+              email: session.user.email,
+              role: session.user.role || 'patient'
+            })
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log('✅ Generated JWT token for NextAuth user');
+            
+            // Store the JWT token for API calls
+            sessionStorage.setItem('token', data.token);
+            localStorage.setItem('token', data.token);
+            Cookies.set('token', data.token, { 
+              secure: true,
+              sameSite: 'strict',
+              path: '/',
+              expires: 7
+            });
+            
+            // Update auth state with real JWT token
+            setAuthState(prevState => {
+              if (prevState.token !== data.token || prevState.userId !== session.user.id) {
+                return {
+                  isAuthenticated: true,
+                  userId: session.user.id,
+                  token: data.token, // Use real JWT token instead of 'nextauth-session'
+                  role: session.user.role || 'patient',
+                  isAdmin: session.user.isAdmin || false,
+                };
+              }
+              return prevState;
+            });
+          } else {
+            console.error('Failed to generate JWT token for NextAuth user');
+            // Fallback to nextauth-session if token generation fails
+            setAuthState(prevState => {
+              if (prevState.token !== 'nextauth-session' || prevState.userId !== session.user.id) {
+                return {
+                  isAuthenticated: true,
+                  userId: session.user.id,
+                  token: 'nextauth-session',
+                  role: session.user.role || 'patient',
+                  isAdmin: session.user.isAdmin || false,
+                };
+              }
+              return prevState;
+            });
+          }
+        } catch (error) {
+          console.error('Error generating JWT token for NextAuth user:', error);
+          // Fallback to nextauth-session
+          setAuthState(prevState => {
+            if (prevState.token !== 'nextauth-session' || prevState.userId !== session.user.id) {
+              return {
+                isAuthenticated: true,
+                userId: session.user.id,
+                token: 'nextauth-session',
+                role: session.user.role || 'patient',
+                isAdmin: session.user.isAdmin || false,
+              };
+            }
+            return prevState;
+          });
+        }
+      };
+      
+      // Only generate token if we don't already have a valid JWT
+      const existingToken = sessionStorage.getItem('token') || localStorage.getItem('token');
+      if (!existingToken || existingToken === 'nextauth-session' || !isTokenValid(existingToken)) {
+        generateJWTForNextAuth();
+      } else {
+        // We already have a valid JWT token
+        setAuthState(prevState => {
+          if (prevState.token !== existingToken || prevState.userId !== session.user.id) {
+            return {
+              isAuthenticated: true,
+              userId: session.user.id,
+              token: existingToken,
+              role: session.user.role || 'patient',
+              isAdmin: session.user.isAdmin || false,
+            };
+          }
+          return prevState;
+        });
+      }
+      
+      return;
+    }
+    
+    // Fall back to JWT token authentication for local auth
     if (typeof window === 'undefined') return;
     
     // Check if we have auth data in localStorage or sessionStorage
@@ -139,25 +256,45 @@ export function AuthProvider({ children }) {
         localStorage.setItem('userId', userId);
       }
       
-      setAuthState({
-        isAuthenticated: true,
-        token,
-        userId,
-        role,
-        isAdmin: !!isAdmin,
+      setAuthState(prevState => {
+        // Only update if different to prevent loops
+        if (prevState.token !== token || prevState.userId !== userId) {
+          return {
+            isAuthenticated: true,
+            token,
+            userId,
+            role,
+            isAdmin: !!isAdmin,
+          };
+        }
+        return prevState;
       });
     } else if (token) {
       // Token exists but is invalid
       console.warn('Found invalid token, logging out');
       logout();
+    } else if (status === 'unauthenticated') {
+      // Neither NextAuth session nor JWT token
+      setAuthState(prevState => {
+        // Only update if different to prevent loops
+        if (prevState.isAuthenticated) {
+          return {
+            isAuthenticated: false,
+            token: null,
+            userId: null,
+            role: null,
+            isAdmin: false,
+          };
+        }
+        return prevState;
+      });
     }
 
     // Add event listener for when browser/tab is closing
     const handleBeforeUnload = async (event) => {
-      if (authState.isAuthenticated && authState.token) {
-        // The keepalive flag in the fetch ensures the request completes
-        // even as the page is unloading
-        serverLogout(authState.token);
+      const currentToken = sessionStorage.getItem('token') || localStorage.getItem('token');
+      if (currentToken && currentToken !== 'nextauth-session') {
+        serverLogout(currentToken);
       }
     };
 
@@ -167,7 +304,7 @@ export function AuthProvider({ children }) {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [authState.isAuthenticated, authState.token]);
+  }, [session, status]); // Removed authState dependencies to prevent loops
 
   const login = (userData) => {
     const { token, userId, role, isAdmin } = userData;
@@ -209,8 +346,13 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     const token = authState.token || sessionStorage.getItem('token') || localStorage.getItem('token');
     
-    // Try to notify the server about the logout
-    if (token) {
+    // If using NextAuth session, sign out through NextAuth
+    if (session || authState.token === 'nextauth-session') {
+      await signOut({ redirect: false });
+    }
+    
+    // Try to notify the server about the logout for JWT tokens
+    if (token && token !== 'nextauth-session') {
       await serverLogout(token);
     }
     
@@ -240,6 +382,12 @@ export function AuthProvider({ children }) {
   
   // Method to verify token validity and refresh auth state
   const verifyToken = () => {
+    // If using NextAuth session, check session status
+    if (session || authState.token === 'nextauth-session') {
+      return status === 'authenticated';
+    }
+    
+    // For JWT tokens, check validity
     const token = sessionStorage.getItem('token') || localStorage.getItem('token') || Cookies.get('token');
     const isValid = isTokenValid(token);
     
@@ -263,6 +411,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export const useAuth = () => useContext(AuthContext); 
+} 

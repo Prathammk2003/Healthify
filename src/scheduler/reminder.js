@@ -87,30 +87,31 @@ const processedReminders = new Set();
 export const checkMedicationReminders = async (currentTime) => {
   const now = new Date();
   const formattedCurrentTime = currentTime || `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-  
+
   console.log(`[${now.toISOString()}] 🔍 Checking medication reminders for all users at time: ${formattedCurrentTime}`);
-  
+
   try {
-    // Connect to DB if not already connected
+    // Connect to DB if not already connected (with retry logic)
     if (mongoose.connection.readyState !== 1 && !isMockMode()) {
       console.log('MongoDB not connected, connecting now...');
-      await connectDB();
+      const { withRetry } = await import('../lib/db.js');
+      await withRetry(async () => await connectDB());
     }
-    
+
     // Get ALL active reminders, not just for current time
     let allReminders;
     if (isMockMode()) {
       console.log('📋 Using mock data for medication reminders');
-      
+
       // Get ALL active reminders from mock collection
       allReminders = findInMockCollection('medicationReminders', {
         active: true
       });
-      
+
       // If no reminders in mock data, create mock reminders
       if (allReminders.length === 0) {
         console.log(`Creating mock reminders for demonstration`);
-        
+
         // Create mock reminders with different times
         allReminders = [
           {
@@ -143,13 +144,13 @@ export const checkMedicationReminders = async (currentTime) => {
         active: true
       });
     }
-    
+
     console.log(`Found ${allReminders.length} total active medication reminders across all users`);
-    
+
     if (allReminders.length === 0) {
       return;
     }
-    
+
     // Update the filter logic in checkMedicationReminders function to handle complex scheduling
     const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ...
     const currentDate = now.getDate(); // 1-31
@@ -161,57 +162,57 @@ export const checkMedicationReminders = async (currentTime) => {
       if (reminder.status !== 'Pending') {
         return false;
       }
-      
+
       // Handle "Twice Daily" reminders
       if (reminder.frequency === 'Twice Daily' && reminder.times && reminder.times.length > 0) {
         // Check if any of the times match the current time
         return reminder.times.includes(formattedCurrentTime);
       }
-      
+
       // Handle "Weekly" reminders
       if (reminder.frequency === 'Weekly' && reminder.daysOfWeek && reminder.daysOfWeek.length > 0) {
         // Check if today is one of the selected days AND the time matches
         return reminder.daysOfWeek.includes(todayName) && reminder.time === formattedCurrentTime;
       }
-      
+
       // Handle "Monthly" reminders
       if (reminder.frequency === 'Monthly' && reminder.daysOfMonth && reminder.daysOfMonth.length > 0) {
         // Check if today is one of the selected dates AND the time matches
         return reminder.daysOfMonth.includes(currentDate) && reminder.time === formattedCurrentTime;
       }
-      
+
       // Default for "Daily" and "As Needed" - just check the time
       return reminder.time === formattedCurrentTime;
     });
-    
+
     console.log(`${remindersForCurrentTime.length} reminders are scheduled for current time ${formattedCurrentTime}`);
-    
+
     // Get all users with reminders
     const allUserIds = [...new Set(allReminders.map(r => r.userId.toString()))];
     console.log(`System has ${allUserIds.length} users with active medication reminders`);
-    
+
     // Check reminders for each user
     for (const userId of allUserIds) {
       try {
         // All reminders for this user (not just current time)
         const userReminders = allReminders.filter(r => r.userId.toString() === userId);
-        
+
         // Only reminders for current time
         const userCurrentReminders = remindersForCurrentTime.filter(r => r.userId.toString() === userId);
-        
+
         console.log(`User ${userId} has ${userReminders.length} total reminders, ${userCurrentReminders.length} due now`);
-        
+
         // Skip if no reminders due for this user at current time
         if (userCurrentReminders.length === 0) {
           continue;
         }
-        
+
         // Get user profile for contact information
         let userProfile;
         if (isMockMode()) {
           // Get mock user profile
           userProfile = findInMockCollection('userProfiles', { userId: userId })[0];
-          
+
           if (!userProfile) {
             console.log('Creating mock user profile for demonstration');
             userProfile = {
@@ -225,17 +226,17 @@ export const checkMedicationReminders = async (currentTime) => {
         } else {
           userProfile = await UserProfile.findOne({ userId: userId });
         }
-        
+
         if (!userProfile) {
           console.error(`❌ User profile not found for userId: ${userId}`);
           continue;
         }
-        
+
         if (!userProfile.contactNumber) {
           console.error(`❌ No contact number found for user: ${userId}`);
           continue;
         }
-        
+
         // Process each reminder due for this user at current time
         for (const reminder of userCurrentReminders) {
           try {
@@ -245,16 +246,16 @@ export const checkMedicationReminders = async (currentTime) => {
               console.log(`Skipping already processed reminder: ${reminderKey}`);
               continue;
             }
-            
+
             // Add to processed set with a 5-minute expiration
             processedReminders.add(reminderKey);
             setTimeout(() => processedReminders.delete(reminderKey), 5 * 60 * 1000);
-            
+
             console.log(`Processing reminder: ${reminder.medicationName} (User: ${userId})`);
-            
+
             // Send the reminder notification
             console.log(`📱 Sending reminder to ${userProfile.contactNumber} for medication: ${reminder.medicationName}`);
-            
+
             let result;
             if (isMockMode()) {
               // Mock notification sending
@@ -263,26 +264,30 @@ export const checkMedicationReminders = async (currentTime) => {
               console.log('✅ MOCK: Medication reminder sent successfully');
             } else {
               // Real notification sending
+              console.log(`🔍 Debug: Sending medication reminder with reminder:`, JSON.stringify(reminder, null, 2));
+              console.log(`🔍 Debug: Sending medication reminder with userProfile:`, JSON.stringify(userProfile, null, 2));
               result = await sendMedicationReminder(reminder, userProfile);
             }
-            
+
+            console.log(`🔍 Debug: Medication reminder result:`, JSON.stringify(result, null, 2));
+
             if (result.success) {
               // Update reminder status
               if (!isMockMode()) {
-                await MedicationReminder.findByIdAndUpdate(reminder._id, { 
+                await MedicationReminder.findByIdAndUpdate(reminder._id, {
                   status: 'Sent',
                   lastSent: new Date()
                 });
               }
               console.log(`✅ Updated reminder status to 'Sent' for reminder ${reminder._id}`);
-              
+
               // Reset logic varies by frequency type
               if (reminder.frequency === 'Daily') {
                 // For daily reminders, reset after 23 hours
                 setTimeout(async () => {
                   try {
                     if (!isMockMode()) {
-                      await MedicationReminder.findByIdAndUpdate(reminder._id, { 
+                      await MedicationReminder.findByIdAndUpdate(reminder._id, {
                         status: 'Pending'
                       });
                     }
@@ -296,7 +301,7 @@ export const checkMedicationReminders = async (currentTime) => {
                 setTimeout(async () => {
                   try {
                     if (!isMockMode()) {
-                      await MedicationReminder.findByIdAndUpdate(reminder._id, { 
+                      await MedicationReminder.findByIdAndUpdate(reminder._id, {
                         status: 'Pending'
                       });
                     }
@@ -310,7 +315,7 @@ export const checkMedicationReminders = async (currentTime) => {
                 setTimeout(async () => {
                   try {
                     if (!isMockMode()) {
-                      await MedicationReminder.findByIdAndUpdate(reminder._id, { 
+                      await MedicationReminder.findByIdAndUpdate(reminder._id, {
                         status: 'Pending'
                       });
                     }
@@ -324,7 +329,7 @@ export const checkMedicationReminders = async (currentTime) => {
                 setTimeout(async () => {
                   try {
                     if (!isMockMode()) {
-                      await MedicationReminder.findByIdAndUpdate(reminder._id, { 
+                      await MedicationReminder.findByIdAndUpdate(reminder._id, {
                         status: 'Pending'
                       });
                     }
@@ -355,12 +360,12 @@ export const checkMedicationReminders = async (currentTime) => {
  */
 export const startReminderScheduler = () => {
   console.log('🔄 Starting medication reminder scheduler...');
-  
+
   if (isSchedulerRunning) {
     console.log('⚠️ Medication reminder scheduler is already running');
     return;
   }
-  
+
   try {
     // Schedule cron job to run every minute
     const job = cron.schedule('* * * * *', async () => {
@@ -369,16 +374,16 @@ export const startReminderScheduler = () => {
         const currentHour = now.getHours().toString().padStart(2, '0');
         const currentMinute = now.getMinutes().toString().padStart(2, '0');
         const currentTime = `${currentHour}:${currentMinute}`;
-        
+
         await checkMedicationReminders(currentTime);
       } catch (cronError) {
         console.error('❌ Error in cron job execution:', cronError);
       }
     });
-    
+
     isSchedulerRunning = true;
     console.log('✅ Medication reminder scheduler started successfully');
-    
+
     return job;
   } catch (error) {
     console.error('❌ Failed to start reminder scheduler:', error);
@@ -405,7 +410,7 @@ export const stopReminderScheduler = (job) => {
  */
 export const manuallyCheckReminders = async (specificTime = null) => {
   let timeToCheck;
-  
+
   if (specificTime) {
     timeToCheck = specificTime;
   } else {
@@ -414,7 +419,7 @@ export const manuallyCheckReminders = async (specificTime = null) => {
     const currentMinute = now.getMinutes().toString().padStart(2, '0');
     timeToCheck = `${currentHour}:${currentMinute}`;
   }
-  
+
   console.log(`👨‍💻 Manually checking reminders for time: ${timeToCheck}`);
   await checkMedicationReminders(timeToCheck);
 };
@@ -428,85 +433,89 @@ cron.schedule("* * * * *", async () => {
       console.log("⚠️ Running in mock mode - skipping real appointment checks");
       return;
     }
-    
+
     await connectDB();
-    
+
     const now = new Date();
     console.log(`Current date/time: ${now.toISOString()}`);
-    
+
     // Calculate target times for reminders (24 hours, 12 hours, and 1 hour before appointments)
     const reminder24h = new Date(now);
     reminder24h.setHours(now.getHours() + 24);
-    
+
     const reminder12h = new Date(now);
     reminder12h.setHours(now.getHours() + 12);
-    
+
     const reminder1h = new Date(now);
     reminder1h.setHours(now.getHours() + 1);
-    
+
     // Format dates and times for database query
     const formatDateForQuery = (date) => date.toISOString().split('T')[0];
-    const formatTimeForQuery = (date) => date.toLocaleTimeString("en-US", { 
-      hour: "2-digit", 
-      minute: "2-digit", 
-      hour12: false 
+    const formatTimeForQuery = (date) => date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
     });
-    
+
     const date24h = formatDateForQuery(reminder24h);
     const time24h = formatTimeForQuery(reminder24h);
     const date12h = formatDateForQuery(reminder12h);
     const time12h = formatTimeForQuery(reminder12h);
     const date1h = formatDateForQuery(reminder1h);
     const time1h = formatTimeForQuery(reminder1h);
-    
+
     console.log(`Looking for appointments at these times:
     - 24h: ${date24h} ${time24h}
     - 12h: ${date12h} ${time12h}
     - 1h: ${date1h} ${time1h}`);
-    
+
     // Find appointments that are happening at our target reminder times
-    // Use case-insensitive query for status
+    // Include BOTH pending and approved appointments
     const query = {
       $or: [
         { status: "approved" },
-        { status: "Approved" }  // Check for both uppercase and lowercase
+        { status: "Approved" },
+        { status: "pending" },
+        { status: "Pending" }
       ],
       $or: [
         // 24-hour reminders
-        { 
+        {
           date: date24h,
           time: time24h,
           reminderSent24h: { $ne: true }
         },
         // 12-hour reminders
-        { 
+        {
           date: date12h,
           time: time12h,
           reminderSent12h: { $ne: true }
         },
         // 1-hour reminders
-        { 
+        {
           date: date1h,
           time: time1h,
           reminderSent1h: { $ne: true }
         }
       ]
     };
-    
+
     console.log(`Appointment query: ${JSON.stringify(query)}`);
-    
-    // First, count all approved appointments to check if there are any
-    const totalApprovedCount = await Appointment.countDocuments({
+
+    // First, count all appointments (pending + approved) to check if there are any
+    const totalCount = await Appointment.countDocuments({
       $or: [
         { status: "approved" },
-        { status: "Approved" }
+        { status: "Approved" },
+        { status: "pending" },
+        { status: "Pending" }
       ]
     });
-    
-    console.log(`Total approved appointments in database: ${totalApprovedCount}`);
-    
+
+    console.log(`Total appointments in database (pending + approved): ${totalCount}`);
+
     const appointments = await Appointment.find(query).populate('doctor');
-    
+
     console.log(`Found ${appointments.length} appointments that need reminders`);
 
     if (appointments.length === 0) {
@@ -525,27 +534,27 @@ cron.schedule("* * * * *", async () => {
         })))}
         `);
       }
-      
+
       console.log("✅ No pending appointment reminders.");
       return;
     }
 
     console.log(`📬 Found ${appointments.length} appointments to send reminders for`);
-    
+
     for (const appointment of appointments) {
       const userProfile = await UserProfile.findOne({ userId: appointment.userId });
       if (!userProfile) {
         console.log(`⚠️ No user profile found for user ${appointment.userId}`);
         continue;
       }
-      
+
       // Calculate which reminder this is (24h, 12h, or 1h)
       const appointmentDate = new Date(`${appointment.date}T${appointment.time}`);
       const hoursUntilAppointment = Math.round((appointmentDate - now) / (1000 * 60 * 60));
-      
+
       let reminderType = "";
       let reminderField = "";
-      
+
       if (hoursUntilAppointment >= 22 && hoursUntilAppointment <= 24) {
         reminderType = "24-hour";
         reminderField = "reminderSent24h";
@@ -560,19 +569,19 @@ cron.schedule("* * * * *", async () => {
         console.log(`⚠️ Appointment for user ${appointment.userId} doesn't match any reminder timeframe (${hoursUntilAppointment} hours away)`);
         continue;
       }
-      
+
       console.log(`Sending ${reminderType} reminder for appointment on ${appointment.date} at ${appointment.time}`);
-      
+
       // Use the notification service to send the reminder
       const result = await sendAppointmentReminder(appointment, userProfile, reminderType);
-      
+
       if (result.success) {
         // Mark this reminder as sent
         const updateResult = await Appointment.findByIdAndUpdate(appointment._id, {
           [reminderField]: true,
           lastReminderSent: new Date()
         });
-        
+
         console.log(`✅ ${reminderType} appointment reminder sent to user ${appointment.userId} for appointment on ${appointment.date} at ${appointment.time}`);
         console.log(`Update result: ${updateResult ? "Success" : "Failed"}`);
       } else if (result.skipped) {
@@ -595,7 +604,7 @@ cron.schedule("0 9 * * *", async () => {
       console.log("⚠️ Running in mock mode - skipping real health tip sending");
       return;
     }
-    
+
     // Get all users
     const users = await User.find({ role: "patient" });
     if (users.length === 0) return console.log("✅ No users to send health tips to.");

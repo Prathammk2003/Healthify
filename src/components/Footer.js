@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Github, Mail, Heart } from 'lucide-react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();

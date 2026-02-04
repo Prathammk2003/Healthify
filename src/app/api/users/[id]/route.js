@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
 
     await connectDB();
 
-    const userId = params.id;
+    const { id: userId } = await params;
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
@@ -64,7 +64,7 @@ export async function PUT(request, { params }) {
 
     await connectDB();
 
-    const userId = params.id;
+    const { id: userId } = await params;
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
@@ -78,13 +78,13 @@ export async function PUT(request, { params }) {
     // Only allow users to update their own data, unless they're an admin
     const isOwnAccount = decoded.id === userId;
     const isAdmin = requestingUser.isAdmin;
-    
+
     if (!isOwnAccount && !isAdmin) {
       return NextResponse.json({ error: 'Forbidden: You can only update your own data or you need admin privileges' }, { status: 403 });
     }
 
     const { name, email, role, password } = await request.json();
-    
+
     // Find the user to update
     const userToUpdate = await User.findById(userId);
     if (!userToUpdate) {
@@ -95,13 +95,13 @@ export async function PUT(request, { params }) {
     const updateData = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
-    
+
     // Role can only be changed by admins
     if (role && isAdmin) {
       updateData.role = role;
       updateData.isAdmin = role === 'admin';
     }
-    
+
     // If password is provided, hash it
     if (password) {
       updateData.password = await bcrypt.hash(password, 10);
@@ -143,7 +143,7 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: 'Forbidden: Only admin users can delete users' }, { status: 403 });
     }
 
-    const userId = params.id;
+    const { id: userId } = await params;
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }

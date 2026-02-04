@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/hooks/useAuth';
 import { Loader2, ArrowLeft, Scale, Apple, Activity, Check, Info, Dumbbell } from 'lucide-react';
 import Link from 'next/link';
 

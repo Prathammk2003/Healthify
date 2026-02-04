@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import MentalHealth from '@/models/MentalHealth';
-import { HfInference } from '@huggingface/inference';
-
-const hf = new HfInference(process.env.HUGGING_FACE_API_KEY);
 
 export async function POST(request) {
   try {
@@ -36,6 +33,10 @@ export async function POST(request) {
       const newRecord = new MentalHealth(body);
       await newRecord.save();
       console.log('Mental health data saved successfully');
+      
+      // Update health trends
+      await updateHealthTrends(body);
+      
     } catch (error) {
       console.error('Error saving mental health data:', error);
       return NextResponse.json({ 
@@ -77,50 +78,12 @@ async function generateAIRecommendation(userData) {
 • Share your positive energy with others who might benefit from your support.`;
     }
 
-    const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+    // Using local models instead of Hugging Face API
+    // This function would need to be reimplemented to use local model loading
+    console.log('AI recommendation would use local models');
     
-    const sleepAssessment = userData.sleepHours < 6 
-      ? "significantly below recommended levels" 
-      : userData.sleepHours < 8 
-        ? "slightly below optimal levels" 
-        : "at healthy levels";
-
-    // Create a more detailed prompt
-    const prompt = `You are a mental health expert providing personalized insights based on a user's mental health check-in data.
-
-User's check-in data:
-- Mood: ${userData.mood}
-- Stress level (0-10): ${userData.stressLevel}
-- Hours of sleep: ${userData.sleepHours} (${sleepAssessment})
-- Anxiety level (0-10): ${userData.anxiety}
-${userData.thoughts ? `- Additional thoughts: ${userData.thoughts}` : ''}
-
-Based on this data, provide a brief, empathetic response with insights and practical recommendations.
-Your response should have 4-6 bullet points, each starting with a bullet point character "•".
-Do not include any section headings like "Analysis" or "Recommendations" - just provide the bullet points directly.
-
-Format each point to be concise, compassionate, and actionable. The first 1-2 points should acknowledge their current state,
-the next 2-3 points should provide practical suggestions, and the final point should be encouraging.`;
-
-    const result = await hf.textGeneration({
-      model: 'mistralai/Mistral-7B-Instruct-v0.2',
-      inputs: prompt,
-      parameters: {
-        max_new_tokens: 512,
-        temperature: 0.7,
-        top_p: 0.95,
-        repetition_penalty: 1.1
-      }
-    });
-    
-    let response = result.generated_text || '';
-    
-    // Extract just the bullet points from the response
-    const bulletPoints = response.split('\n')
-      .filter(line => line.trim().startsWith('•'))
-      .join('\n');
-    
-    return bulletPoints || generateFallbackRecommendation(userData);
+    // Return fallback recommendation since we're not using Hugging Face API
+    return generateFallbackRecommendation(userData);
   } catch (error) {
     console.error('Error generating AI recommendation:', error);
     return generateFallbackRecommendation(userData);
@@ -178,4 +141,170 @@ function generateFallbackRecommendation(userData) {
 • Gentle movement like stretching can help release tension in your body.
 • Staying hydrated and well-nourished supports emotional wellbeing.
 • Remember that all emotions provide valuable information and will evolve over time.`;
+}
+
+/**
+ * Update health trends with new mental health data
+ */
+async function updateHealthTrends(userData) {
+  try {
+    // Import HealthTrend model
+    const HealthTrend = (await import('@/models/HealthTrend')).default;
+    
+    const trendUpdates = [
+      {
+        metricName: 'stress_level',
+        category: 'mental_health',
+        value: userData.stressLevel,
+        source: 'mental_health'
+      },
+      {
+        metricName: 'anxiety_level', 
+        category: 'mental_health',
+        value: userData.anxiety || 0,
+        source: 'mental_health'
+      },
+      {
+        metricName: 'sleep_quality',
+        category: 'lifestyle',
+        value: userData.sleepHours,
+        source: 'mental_health'
+      },
+      {
+        metricName: 'energy_level',
+        category: 'lifestyle', 
+        value: userData.energyLevel || 5,
+        source: 'mental_health'
+      },
+      {
+        metricName: 'mood_score',
+        category: 'mental_health',
+        value: convertMoodToScore(userData.mood),
+        source: 'mental_health'
+      },
+      {
+        metricName: 'social_interaction',
+        category: 'social',
+        value: userData.socialInteraction || 5,
+        source: 'mental_health'
+      },
+      {
+        metricName: 'self_esteem',
+        category: 'mental_health',
+        value: userData.selfEsteem || 5,
+        source: 'mental_health'
+      },
+      {
+        metricName: 'concentration_level',
+        category: 'mental_health',
+        value: userData.concentration || 5,
+        source: 'mental_health'
+      }
+    ];
+
+    // Update each trend
+    for (const trendData of trendUpdates) {
+      let trend = await HealthTrend.findOne({
+        userId: userData.userId,
+        metricName: trendData.metricName,
+        isActive: true
+      });
+
+      if (!trend) {
+        trend = new HealthTrend({
+          userId: userData.userId,
+          metricName: trendData.metricName,
+          category: trendData.category,
+          timeframe: 'daily',
+          dataPoints: [],
+          analytics: {},
+          targets: getDefaultTargetsForMetric(trendData.metricName)
+        });
+      }
+
+      // Add data point
+      await trend.addDataPoint(trendData.value, trendData.source, {
+        mood: userData.mood,
+        timestamp: new Date().toISOString()
+      });
+
+      // Recalculate analytics
+      trend.calculateAnalytics();
+      await trend.save();
+    }
+
+    console.log('Health trends updated successfully');
+  } catch (error) {
+    console.error('Error updating health trends:', error);
+    // Don't throw error to prevent mental health save from failing
+  }
+}
+
+/**
+ * Convert mood string to numeric score
+ */
+function convertMoodToScore(mood) {
+  const moodScores = {
+    'Happy': 9,
+    'Content': 7, 
+    'Neutral': 5,
+    'Anxious': 3,
+    'Sad': 2,
+    'Stressed': 2
+  };
+  return moodScores[mood] || 5;
+}
+
+/**
+ * Get default targets for specific metrics
+ */
+function getDefaultTargetsForMetric(metricName) {
+  const defaultTargets = {
+    stress_level: {
+      idealRange: { min: 0, max: 4 },
+      warningThresholds: { lower: 0, upper: 6 },
+      criticalThresholds: { lower: 0, upper: 8 }
+    },
+    anxiety_level: {
+      idealRange: { min: 0, max: 3 },
+      warningThresholds: { lower: 0, upper: 5 },
+      criticalThresholds: { lower: 0, upper: 7 }
+    },
+    sleep_quality: {
+      idealRange: { min: 7, max: 9 },
+      warningThresholds: { lower: 6, upper: 10 },
+      criticalThresholds: { lower: 4, upper: 12 }
+    },
+    energy_level: {
+      idealRange: { min: 6, max: 10 },
+      warningThresholds: { lower: 4, upper: 10 },
+      criticalThresholds: { lower: 2, upper: 10 }
+    },
+    mood_score: {
+      idealRange: { min: 6, max: 10 },
+      warningThresholds: { lower: 4, upper: 10 },
+      criticalThresholds: { lower: 2, upper: 10 }
+    },
+    social_interaction: {
+      idealRange: { min: 5, max: 10 },
+      warningThresholds: { lower: 3, upper: 10 },
+      criticalThresholds: { lower: 1, upper: 10 }
+    },
+    self_esteem: {
+      idealRange: { min: 6, max: 10 },
+      warningThresholds: { lower: 4, upper: 10 },
+      criticalThresholds: { lower: 2, upper: 10 }
+    },
+    concentration_level: {
+      idealRange: { min: 6, max: 10 },
+      warningThresholds: { lower: 4, upper: 10 },
+      criticalThresholds: { lower: 2, upper: 10 }
+    }
+  };
+
+  return defaultTargets[metricName] || {
+    idealRange: { min: 5, max: 10 },
+    warningThresholds: { lower: 3, upper: 10 },
+    criticalThresholds: { lower: 1, upper: 10 }
+  };
 }

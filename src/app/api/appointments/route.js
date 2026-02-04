@@ -4,9 +4,10 @@ import Doctor from '@/models/Doctor';
 import User from '@/models/User';
 import UserProfile from '@/models/UserProfile';
 import { NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
+import { verifyJwtToken } from '@/lib/auth';
 import mongoose from 'mongoose';
 import { isTimeSlotAvailable, updateSlotFromAppointment } from '@/utils/slotManager';
+import { sendEmail } from '@/services/notificationService';
 
 export async function POST(req) {
   try {
@@ -19,11 +20,9 @@ export async function POST(req) {
     }
 
     const token = authHeader.split(' ')[1];
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (error) {
-      console.error('Token verification failed:', error);
+    const decoded = await verifyJwtToken(token);
+
+    if (!decoded || !decoded.id) {
       return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
     }
 
@@ -58,7 +57,7 @@ export async function POST(req) {
     const isAvailable = await isTimeSlotAvailable(doctorId, date, time);
     if (!isAvailable) {
       console.error(`Time slot ${date} at ${time} is not available for doctor ${doctorId}`);
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'This time slot is no longer available. Please select another time.',
         errorCode: 'TIME_SLOT_UNAVAILABLE'
       }, { status: 409 });
@@ -68,7 +67,7 @@ export async function POST(req) {
 
     // Get the patient profile - either find existing or create new
     let patientProfile = await UserProfile.findOne({ userId });
-    
+
     if (!patientProfile) {
       console.log(`Patient profile not found for user ID: ${userId}, creating new profile...`);
       // Get user info to create a profile
@@ -77,12 +76,12 @@ export async function POST(req) {
         console.error(`User not found with ID: ${userId}`);
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
-      
+
       // Split the name into first and last name
       const nameParts = user.name.split(' ');
       const firstName = nameParts[0];
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Not Provided';
-      
+
       // Create a new patient profile with all required fields
       patientProfile = new UserProfile({
         userId,
@@ -93,13 +92,13 @@ export async function POST(req) {
         contactNumber: 'Not provided', // Default contact number
         medicalHistory: []
       });
-      
+
       await patientProfile.save();
       console.log(`Created new patient profile with ID: ${patientProfile._id}`);
     } else {
       console.log(`Found existing patient profile: ${patientProfile._id}`);
     }
-    
+
     // Note: Association with doctor now happens only after approval
     // We removed automatic association at request time
 
@@ -112,7 +111,7 @@ export async function POST(req) {
       status: 'pending'
     };
     console.log('Creating appointment with data:', appointmentData);
-    
+
     const appointment = await Appointment.create(appointmentData);
 
     // NEW: Update the time slot status
@@ -124,9 +123,59 @@ export async function POST(req) {
       status: appointment.status
     });
 
+    // ✅ SEND EMAIL TO DOCTOR when patient requests appointment
+    try {
+      console.log('🔍 Attempting to send appointment request email to doctor...');
+
+      // Get patient information
+      const patientUser = await User.findById(userId);
+      const patientName = patientUser ? patientUser.name : 'A patient';
+      const patientEmail = patientUser ? patientUser.email : 'Not provided';
+
+      // Get doctor's user information to get email
+      const doctorUser = await User.findById(doctor.userId);
+
+      if (doctorUser && doctorUser.email) {
+        console.log('📧 Doctor email:', doctorUser.email);
+
+        const emailSubject = `New Appointment Request - ${date}`;
+
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+            <h2 style="color: #3b82f6;">📅 New Appointment Request</h2>
+            <p>Hello Dr. ${doctorUser.name || 'Doctor'},</p>
+            <p>You have received a new appointment request from a patient. Please review and approve or reject this request.</p>
+            <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin: 15px 0;">
+              <p style="margin: 5px 0;"><strong>Patient Name:</strong> ${patientName}</p>
+              <p style="margin: 5px 0;"><strong>Patient Email:</strong> ${patientEmail}</p>
+              <p style="margin: 5px 0;"><strong>Requested Date:</strong> ${date}</p>
+              <p style="margin: 5px 0;"><strong>Requested Time:</strong> ${time}</p>
+              <p style="margin: 5px 0;"><strong>Status:</strong> PENDING APPROVAL</p>
+            </div>
+            <p style="color: #3b82f6; font-weight: bold;">⏰ Please review this request in your doctor dashboard.</p>
+            <p style="margin-top: 20px;">Thank you for using our healthcare service!</p>
+          </div>
+        `;
+
+        await sendEmail({
+          email: doctorUser.email,
+          subject: emailSubject,
+          html: emailHtml,
+          text: `New appointment request from ${patientName} for ${date} at ${time}. Please review in your dashboard.`
+        });
+
+        console.log(`✅ Email sent successfully to doctor ${doctorUser.email} about new appointment request!`);
+      } else {
+        console.log('⚠️ Cannot send email - doctor user or email not found');
+      }
+    } catch (emailError) {
+      console.error('Error sending appointment request email to doctor:', emailError);
+      // Don't fail the request if email fails
+    }
+
     return NextResponse.json(
-      { 
-        message: 'Appointment request sent successfully!', 
+      {
+        message: 'Appointment request sent successfully!',
         appointment,
         appointmentId: appointment._id
       },
@@ -134,10 +183,10 @@ export async function POST(req) {
     );
   } catch (error) {
     console.error('Server Error creating appointment:', error);
-    return NextResponse.json({ 
-      error: 'Server error', 
+    return NextResponse.json({
+      error: 'Server error',
       details: error.message,
-      stack: error.stack 
+      stack: error.stack
     }, { status: 500 });
   }
 }
@@ -154,10 +203,9 @@ export async function GET(req) {
     }
 
     const token = authHeader.split(' ')[1];
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (error) {
+    const decoded = await verifyJwtToken(token);
+
+    if (!decoded || !decoded.id) {
       return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
     }
 
@@ -169,18 +217,18 @@ export async function GET(req) {
     // First, get all appointments without populating to validate
     console.log(`Fetching appointments for user ID: ${userId}`);
     const allAppointments = await Appointment.find({ userId }).lean();
-    
+
     console.log(`Found ${allAppointments.length} appointments before validation`);
-    
+
     // Fix any invalid doctor references
     for (const appointment of allAppointments) {
       if (appointment.doctor && !mongoose.Types.ObjectId.isValid(appointment.doctor)) {
         console.log(`Found appointment with invalid doctor ID: ${appointment.doctor}`);
-        
+
         // Update the appointment with a valid doctor ID
         await Appointment.findByIdAndUpdate(
           appointment._id,
-          { 
+          {
             doctor: mongoose.Types.ObjectId.createFromHexString("000000000000000000000000"),
             status: 'rejected'
           }
@@ -188,7 +236,7 @@ export async function GET(req) {
         console.log(`Fixed invalid doctor reference for appointment: ${appointment._id}`);
       }
     }
-    
+
     // Now get appointments with proper populate
     const appointments = await Appointment.find({ userId })
       .populate({
@@ -237,10 +285,10 @@ export async function GET(req) {
     return NextResponse.json({ appointments: formattedAppointments }, { status: 200 });
   } catch (error) {
     console.error('Server Error:', error);
-    return NextResponse.json({ 
-      error: 'Server error', 
+    return NextResponse.json({
+      error: 'Server error',
       details: error.message,
-      stack: error.stack 
+      stack: error.stack
     }, { status: 500 });
   }
 }

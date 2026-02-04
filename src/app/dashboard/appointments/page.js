@@ -3,6 +3,26 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui';
 import { DOCTOR_SPECIALIZATIONS } from '@/constants/specializations';
+import {
+  Calendar,
+  Clock,
+  User,
+  Stethoscope,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Edit3,
+  Trash2,
+  Plus,
+  Filter,
+  Search,
+  Activity,
+  Heart,
+  Sparkles,
+  Timer,
+  Target,
+  Shield
+} from 'lucide-react';
 
 export default function AppointmentPage() {
   const [doctorId, setDoctorId] = useState('');
@@ -21,19 +41,29 @@ export default function AppointmentPage() {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
+  const [particles, setParticles] = useState([]);
 
   useEffect(() => {
     fetchDoctors();
     fetchAppointments();
     fetchSpecializations();
+
+    // Generate particles on client side to prevent hydration mismatch
+    const particleData = [...Array(15)].map((_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      animationDelay: Math.random() * 20,
+      animationDuration: 15 + Math.random() * 10
+    }));
+    setParticles(particleData);
   }, []);
 
   useEffect(() => {
     if (selectedSpecialization) {
-      const filtered = doctors.filter(doctor => 
+      const filtered = doctors.filter(doctor =>
         doctor.specialization === selectedSpecialization ||
-        (doctor.secondarySpecializations && 
-         doctor.secondarySpecializations.includes(selectedSpecialization))
+        (doctor.secondarySpecializations &&
+          doctor.secondarySpecializations.includes(selectedSpecialization))
       );
       setFilteredDoctors(filtered);
     } else {
@@ -51,21 +81,16 @@ export default function AppointmentPage() {
 
   const fetchDoctors = async () => {
     try {
-      console.log('Fetching doctors...');
       const res = await fetch('/api/doctors/available');
       const data = await res.json();
-      console.log('Received doctors data:', data);
-      
+
       if (res.ok && data.doctors) {
-        console.log('Setting doctors:', data.doctors);
         setDoctors(data.doctors);
         setFilteredDoctors(data.doctors);
       } else {
-        console.error('Failed to fetch doctors:', data.error);
         setMessage('Failed to fetch doctors');
       }
     } catch (error) {
-      console.error('Error fetching doctors:', error);
       setMessage('Error fetching doctors');
     }
   };
@@ -80,7 +105,6 @@ export default function AppointmentPage() {
         setSpecializations(DOCTOR_SPECIALIZATIONS);
       }
     } catch (error) {
-      console.error('Error fetching specializations:', error);
       setSpecializations(DOCTOR_SPECIALIZATIONS);
     }
   };
@@ -99,7 +123,6 @@ export default function AppointmentPage() {
 
       const data = await res.json();
       if (res.ok) {
-        console.log('Appointments received:', data.appointments);
         setAppointments(data.appointments);
       } else {
         setMessage(data.error || 'Failed to fetch appointments');
@@ -111,12 +134,12 @@ export default function AppointmentPage() {
 
   const fetchAvailableSlots = async () => {
     if (!doctorId || !date) return;
-    
+
     setIsLoadingSlots(true);
     try {
       const res = await fetch(`/api/doctors/${doctorId}/slots?date=${date}`);
       const data = await res.json();
-      
+
       if (res.ok) {
         setAvailableSlots(data.availableSlots || []);
         if (time && !data.availableSlots.some(slot => slot.time === time)) {
@@ -124,11 +147,9 @@ export default function AppointmentPage() {
           setSelectedSlot(null);
         }
       } else {
-        console.error('Failed to fetch available slots:', data.error);
         setAvailableSlots([]);
       }
     } catch (error) {
-      console.error('Error fetching available slots:', error);
       setAvailableSlots([]);
     } finally {
       setIsLoadingSlots(false);
@@ -171,12 +192,7 @@ export default function AppointmentPage() {
         setSelectedSlot(null);
         fetchAppointments();
       } else {
-        if (data.errorCode === 'TIME_SLOT_UNAVAILABLE') {
-          setMessage(data.error || 'This time slot is no longer available');
-          fetchAvailableSlots();
-        } else {
-          setMessage(data.error || 'Failed to book appointment');
-        }
+        setMessage(data.error || 'Failed to book appointment');
       }
     } catch (error) {
       setMessage('Error booking appointment');
@@ -187,20 +203,16 @@ export default function AppointmentPage() {
 
   const getDoctorName = (doctor) => {
     if (!doctor) return 'Unknown Doctor';
-    
     if (typeof doctor === 'string') return doctor;
-    
     if (doctor.userId && doctor.userId.name) return doctor.userId.name;
-    
     if (doctor.name) return doctor.name;
-    
-    return JSON.stringify(doctor).substring(0, 20) + '...';
+    return 'Unknown Doctor';
   };
 
   const handleEditClick = (appointment) => {
     setIsEditing(true);
     setEditAppointmentId(appointment._id);
-    
+
     if (appointment.doctor) {
       if (typeof appointment.doctor === 'object' && appointment.doctor.id) {
         setDoctorId(appointment.doctor.id);
@@ -214,7 +226,7 @@ export default function AppointmentPage() {
     } else {
       setDoctorId('');
     }
-    
+
     setDate(appointment.date);
     setTime(appointment.time);
   };
@@ -271,7 +283,7 @@ export default function AppointmentPage() {
   const handleDelete = async (appointmentId) => {
     setIsDeletingId(appointmentId);
     setMessage('');
-    
+
     const token = localStorage.getItem('token');
     if (!token) {
       setMessage('Not authenticated');
@@ -291,7 +303,7 @@ export default function AppointmentPage() {
       if (res.ok) {
         setMessage('Appointment deleted successfully!');
         setAppointments(appointments.filter(appt => appt._id !== appointmentId));
-        
+
         if (editAppointmentId === appointmentId) {
           handleCancelEdit();
         }
@@ -300,7 +312,6 @@ export default function AppointmentPage() {
       }
     } catch (error) {
       setMessage('Error deleting appointment');
-      console.error('Delete error:', error);
     }
 
     setIsDeletingId(null);
@@ -318,222 +329,328 @@ export default function AppointmentPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8 text-gray-800">Appointments</h1>
-      {message && (
-        <div className={`p-4 rounded-lg mb-6 ${message.includes('success') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-          {message}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50 dark:from-gray-900 dark:via-blue-900 dark:to-cyan-900 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400/20 to-cyan-400/20 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-cyan-400/20 to-teal-400/20 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
+        <div className="absolute top-40 left-40 w-80 h-80 bg-gradient-to-br from-teal-400/20 to-emerald-400/20 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
+
+        {/* Floating particles */}
+        <div className="particles">
+          {particles.map((particle) => (
+            <div
+              key={particle.id}
+              className="particle"
+              style={{
+                left: `${particle.left}%`,
+                animationDelay: `${particle.animationDelay}s`,
+                animationDuration: `${particle.animationDuration}s`
+              }}
+            />
+          ))}
         </div>
-      )}
 
-      <div className="grid md:grid-cols-2 gap-8">
-        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm">
-          <form onSubmit={isEditing ? handleUpdate : handleSubmit} className="space-y-5">
-            <div>
-              <label className="block font-medium text-gray-700 mb-2">Filter by Specialization</label>
-              <select
-                value={selectedSpecialization}
-                onChange={(e) => setSelectedSpecialization(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg bg-white shadow-sm text-gray-700 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all"
-              >
-                <option value="">All Specializations</option>
-                {specializations.map((spec) => (
-                  <option key={spec} value={spec}>
-                    {spec}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block font-medium text-gray-700 mb-2">Select Doctor</label>
-              <select
-                value={doctorId}
-                onChange={(e) => setDoctorId(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg bg-white shadow-sm text-gray-700 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all"
-                required
-              >
-                <option value="">Choose a doctor</option>
-                {filteredDoctors && filteredDoctors.length > 0 ? (
-                  filteredDoctors.map((doctor) => (
-                    <option key={doctor.id} value={doctor.id}>
-                      {doctor.name} {doctor.specialization ? `(${doctor.specialization})` : ''}
-                    </option>
-                  ))
-                ) : (
-                  <option value="" disabled>No doctors available</option>
-                )}
-              </select>
-            </div>
+        {/* Grid Pattern */}
+        <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-[0.02] [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]"></div>
+      </div>
 
-            <div>
-              <label className="block font-medium text-gray-700 mb-2">Select Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  setTime('');
-                  setSelectedSlot(null);
-                }}
-                className="w-full p-3 border border-gray-300 rounded-lg bg-white shadow-sm text-gray-700 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all"
-                required
-                min={new Date().toISOString().split('T')[0]}
-              />
-            </div>
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-8 space-y-8">
+        {/* Enhanced Header */}
+        <div className="group relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 p-8 text-white shadow-2xl hover:shadow-3xl transition-all duration-500">
+          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-all duration-500"></div>
 
-            {doctorId && date && (
-              <div>
-                <label className="block font-medium text-gray-700 mb-2">
-                  Select Available Time Slot
-                </label>
-                
-                {isLoadingSlots ? (
-                  <div className="text-center py-4">
-                    <p className="text-gray-500">Loading available slots...</p>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-sm hover:bg-white/30 transition-all duration-300 hover:scale-110">
+                    <Calendar className="h-8 w-8 text-white animate-pulse" />
                   </div>
-                ) : availableSlots.length > 0 ? (
                   <div>
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      {availableSlots.map((slot) => (
-                        <button
-                          key={slot.id}
-                          type="button"
-                          onClick={() => handleSlotSelect(slot)}
-                          className={`p-2 border rounded-md text-center transition-colors relative ${
-                            selectedSlot?.id === slot.id
-                              ? 'bg-blue-500 text-white border-blue-600'
-                              : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50'
-                          } ${slot.isRecurring === false ? 'border-green-500' : ''}`}
-                        >
-                          {formatTime(slot.time)}
-                          {slot.isRecurring === false && (
-                            <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-500 rounded-full border border-white" 
-                              title="Special availability slot">
-                            </span>
-                          )}
-                        </button>
+                    <h1 className="text-5xl font-bold mb-2 text-shimmer">Appointment Center</h1>
+                    <p className="text-xl text-white/90">
+                      Schedule and manage your medical consultations
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6 text-white/80">
+                  <div className="flex items-center gap-2 hover:text-white transition-colors">
+                    <Stethoscope className="h-5 w-5" />
+                    <span>Expert Care</span>
+                  </div>
+                  <div className="flex items-center gap-2 hover:text-cyan-200 transition-colors">
+                    <Shield className="h-5 w-5 text-cyan-300" />
+                    <span>Secure Booking</span>
+                  </div>
+                  <div className="flex items-center gap-2 hover:text-teal-200 transition-colors">
+                    <Timer className="h-5 w-5 text-teal-300" />
+                    <span>Real-time Scheduling</span>
+                  </div>
+                </div>
+              </div>
+              <div className="hidden lg:block">
+                <div className="relative">
+                  <div className="w-32 h-32 bg-white/10 rounded-full backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-105">
+                    <Heart className="h-16 w-16 text-white animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {message && (
+          <div className={`group relative overflow-hidden rounded-2xl p-4 text-white shadow-lg hover:shadow-xl transition-all duration-300 ${message.includes('success')
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+              : 'bg-gradient-to-r from-red-500 to-pink-500'
+            }`}>
+            <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors"></div>
+            <div className="relative z-10 flex items-center">
+              {message.includes('success') ? (
+                <CheckCircle2 className="mr-3 h-5 w-5 animate-bounce" />
+              ) : (
+                <AlertCircle className="mr-3 h-5 w-5 animate-pulse" />
+              )}
+              <span className="font-medium">{message}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="grid lg:grid-cols-1 gap-8">
+          {/* Enhanced Booking Form */}
+          <div className="group relative overflow-hidden rounded-3xl bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 shadow-2xl hover:shadow-3xl transition-all duration-500">
+            <div className="relative z-10 p-8">
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-400 dark:to-cyan-400 bg-clip-text text-transparent mb-2">
+                    {isEditing ? 'Update Appointment' : 'Book Appointment'}
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-300">
+                    Select your preferred doctor and time slot
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={isEditing ? handleUpdate : handleSubmit} className="space-y-6">
+                {/* Specialization Filter */}
+                <div className="group/field">
+                  <label className="flex items-center gap-2 font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    <Filter className="h-4 w-4" />
+                    Filter by Specialization
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedSpecialization}
+                      onChange={(e) => setSelectedSpecialization(e.target.value)}
+                      className="w-full p-4 border border-gray-200/50 dark:border-gray-600/50 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm shadow-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-blue-300/50 dark:focus:ring-blue-500/50 focus:border-blue-400 dark:focus:border-blue-500 transition-all duration-300 appearance-none cursor-pointer"
+                    >
+                      <option value="">All Specializations</option>
+                      {specializations.map((spec) => (
+                        <option key={spec} value={spec}>
+                          {spec}
+                        </option>
                       ))}
-                    </div>
-                    {availableSlots.some(slot => slot.isRecurring === false) && (
-                      <div className="mt-2 text-xs text-gray-500 flex items-center">
-                        <span className="inline-block h-3 w-3 bg-green-500 rounded-full mr-1"></span>
-                        Special availability slots set by doctor
+                    </select>
+                  </div>
+                </div>
+
+                {/* Doctor Selection */}
+                <div className="group/field">
+                  <label className="flex items-center gap-2 font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    <Stethoscope className="h-4 w-4" />
+                    Select Doctor
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={doctorId}
+                      onChange={(e) => setDoctorId(e.target.value)}
+                      className="w-full p-4 border border-gray-200/50 dark:border-gray-600/50 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm shadow-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-blue-300/50 dark:focus:ring-blue-500/50 focus:border-blue-400 dark:focus:border-blue-500 transition-all duration-300 appearance-none cursor-pointer"
+                      required
+                    >
+                      <option value="">Choose a doctor</option>
+                      {filteredDoctors && filteredDoctors.length > 0 ? (
+                        filteredDoctors.map((doctor) => (
+                          <option key={doctor.id} value={doctor.id}>
+                            {doctor.name} {doctor.specialization ? `(${doctor.specialization})` : ''}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No doctors available</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Date Selection */}
+                <div className="group/field">
+                  <label className="flex items-center gap-2 font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    <Calendar className="h-4 w-4" />
+                    Select Date
+                  </label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => {
+                      setDate(e.target.value);
+                      setTime('');
+                      setSelectedSlot(null);
+                    }}
+                    className="w-full p-4 border border-gray-200/50 dark:border-gray-600/50 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm shadow-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-blue-300/50 dark:focus:ring-blue-500/50 focus:border-blue-400 dark:focus:border-blue-500 transition-all duration-300"
+                    required
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+
+                {/* Time Slot Selection */}
+                {doctorId && date && (
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Select Available Time Slot
+                    </label>
+
+                    {isLoadingSlots ? (
+                      <div className="text-center py-4">
+                        <p className="text-gray-500">Loading available slots...</p>
+                      </div>
+                    ) : availableSlots.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2 mt-2">
+                        {availableSlots.map((slot) => (
+                          <button
+                            key={slot.id}
+                            type="button"
+                            onClick={() => handleSlotSelect(slot)}
+                            className={`p-2 border rounded-xl text-center transition-all duration-300 ${selectedSlot?.id === slot.id
+                                ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white border-blue-600 shadow-lg scale-105'
+                                : 'bg-white/50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-200 border-gray-200/50 dark:border-gray-600/50 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300'
+                              }`}
+                          >
+                            {formatTime(slot.time)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 border border-dashed border-gray-300 dark:border-gray-600 rounded-2xl">
+                        <p className="text-gray-500 dark:text-gray-400">No available slots for the selected date</p>
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div className="text-center py-4 border border-dashed border-gray-300 rounded-lg">
-                    <p className="text-gray-500">
-                      {doctorId && date
-                        ? "No available slots for the selected date"
-                        : "Select a doctor and date to see available slots"}
-                    </p>
+                )}
+
+                <div className="pt-4">
+                  <Button
+                    type="submit"
+                    disabled={isLoading || !doctorId || !date || !time}
+                    className="w-full"
+                  >
+                    {isLoading ? 'Processing...' : isEditing ? 'Update Appointment' : 'Book Appointment'}
+                  </Button>
+                </div>
+
+                {isEditing && (
+                  <div className="mt-4">
+                    <Button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="w-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      Cancel Edit
+                    </Button>
                   </div>
                 )}
-              </div>
-            )}
-
-            <div className="pt-4">
-              <Button
-                type="submit"
-                disabled={isLoading || !doctorId || !date || !time}
-                className="w-full"
-              >
-                {isLoading ? 'Processing...' : isEditing ? 'Update Appointment' : 'Book Appointment'}
-              </Button>
+              </form>
             </div>
-            
-            {isEditing && (
-              <div className="mt-2">
-                <Button
-                  type="button"
-                  onClick={handleCancelEdit}
-                  className="w-full bg-gray-200 text-gray-800 hover:bg-gray-300"
-                >
-                  Cancel Edit
-                </Button>
-              </div>
-            )}
-          </form>
+          </div>
         </div>
 
+        {/* Appointments List */}
         {appointments.length > 0 && (
           <div className="mt-12">
-            <h3 className="text-2xl font-bold text-gray-800 mb-5 border-b pb-2">Your Appointments</h3>
+            <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent mb-6 border-b border-gray-200 dark:border-gray-700 pb-3 flex items-center gap-2">
+              <Activity className="h-6 w-6 text-blue-500" />
+              Your Appointments
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {appointments.map((appt) => {
                 const statusColors = {
-                  pending: { bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-200' },
-                  approved: { bg: 'bg-green-50', text: 'text-green-600', border: 'border-green-200' },
-                  rejected: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' }
+                  pending: {
+                    bg: 'bg-yellow-50 dark:bg-yellow-900/20',
+                    text: 'text-yellow-600 dark:text-yellow-400',
+                    border: 'border-yellow-200 dark:border-yellow-700/50'
+                  },
+                  approved: {
+                    bg: 'bg-green-50 dark:bg-green-900/20',
+                    text: 'text-green-600 dark:text-green-400',
+                    border: 'border-green-200 dark:border-green-700/50'
+                  },
+                  rejected: {
+                    bg: 'bg-red-50 dark:bg-red-900/20',
+                    text: 'text-red-600 dark:text-red-400',
+                    border: 'border-red-200 dark:border-red-700/50'
+                  }
                 };
-                
+
                 const status = appt.status || 'pending';
                 const { bg, text, border } = statusColors[status];
                 const isDeleting = isDeletingId === appt._id;
-                
+
                 return (
-                  <div key={appt._id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-                    <div className="p-5">
-                      <div className="flex justify-between items-start mb-3">
-                        <h4 className="text-lg font-semibold text-gray-800">{getDoctorName(appt.doctor)}</h4>
-                        <span className={`${text} ${bg} ${border} text-sm font-medium px-3 py-1 rounded-full border`}>
+                  <div key={appt._id} className="group/card relative overflow-hidden bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-1">
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-cyan-500/5 dark:from-blue-500/1 to-cyan-500/1 group-hover/card:from-blue-500/10 group-hover/card:to-cyan-500/10 transition-colors"></div>
+                    <div className="relative z-10">
+                      <div className="flex justify-between items-start mb-4">
+                        <h4 className="text-xl font-bold text-gray-800 dark:text-white group-hover/card:text-blue-600 dark:group-hover/card:text-blue-400 transition-colors">
+                          {getDoctorName(appt.doctor)}
+                        </h4>
+                        <span className={`${text} ${bg} ${border} text-xs font-bold px-3 py-1 rounded-full border shadow-sm`}>
                           {status.charAt(0).toUpperCase() + status.slice(1)}
                         </span>
                       </div>
-                      
-                      <div className="text-gray-600 space-y-2">
-                        <div className="flex items-center">
-                          <svg className="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                          </svg>
-                          <span>{appt.date}</span>
+
+                      <div className="text-gray-600 dark:text-gray-300 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                            <Calendar className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+                          </div>
+                          <span className="font-medium">{appt.date}</span>
                         </div>
-                        
-                        <div className="flex items-center">
-                          <svg className="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                          </svg>
-                          <span>{appt.time}</span>
+
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-cyan-50 dark:bg-cyan-900/30 rounded-lg">
+                            <Clock className="w-5 h-5 text-cyan-500 dark:text-cyan-400" />
+                          </div>
+                          <span className="font-medium">{appt.time}</span>
                         </div>
                       </div>
-                      
-                      <div className="mt-4 flex space-x-2">
+
+                      <div className="mt-6 flex gap-3">
                         {status !== 'rejected' && (
-                          <Button 
-                            onClick={() => handleEditClick(appt)} 
+                          <Button
+                            onClick={() => handleEditClick(appt)}
                             variant="outline"
                             size="sm"
-                            className="inline-flex items-center"
+                            className="flex-1 flex items-center justify-center gap-2 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400"
                           >
-                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-                            </svg>
+                            <Edit3 className="w-4 h-4" />
                             Edit
                           </Button>
                         )}
-                        
-                        <Button 
-                          onClick={() => confirmDelete(appt._id)} 
+
+                        <Button
+                          onClick={() => confirmDelete(appt._id)}
                           disabled={isDeleting}
                           variant="destructive"
                           size="sm"
-                          className="inline-flex items-center"
+                          className="flex-1 flex items-center justify-center gap-2"
                         >
                           {isDeleting ? (
                             <span className="flex items-center">
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
+                              <div className="animate-spin -ml-1 mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
                               Deleting...
                             </span>
                           ) : (
                             <>
-                              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                              </svg>
+                              <Trash2 className="w-4 h-4" />
                               Delete
                             </>
                           )}

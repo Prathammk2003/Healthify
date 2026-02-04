@@ -7,7 +7,6 @@ import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { isTimeSlotAvailable, updateSlotFromAppointment } from '@/utils/slotManager';
-import { connectToDatabase } from '@/lib/mongodb';
 import { verifyToken } from '@/lib/auth';
 import { ObjectId } from 'mongodb';
 import { getServerSession } from 'next-auth';
@@ -47,32 +46,32 @@ export async function PUT(req, { params }) {
 
     // First fetch the existing appointment to compare changes
     const currentAppointment = await Appointment.findOne({ _id: id, userId });
-    
+
     if (!currentAppointment) {
       return NextResponse.json({ error: "Appointment not found" }, { status: 404 });
     }
-    
+
     // Check if date or time is being updated
     const isDateChanged = date && date !== currentAppointment.date;
     const isTimeChanged = time && time !== currentAppointment.time;
-    
+
     // If date or time is being updated, change status to pending_update
     let updateData = { doctor: doctorId, date, time };
     let statusMessage = "Appointment updated successfully!";
-    
+
     if (isDateChanged || isTimeChanged) {
       // If changing date/time, check if the new slot is available
       const isAvailable = await isTimeSlotAvailable(doctorId, date, time);
       if (!isAvailable) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: 'This time slot is no longer available. Please select another time.',
           errorCode: 'TIME_SLOT_UNAVAILABLE'
         }, { status: 409 });
       }
-      
+
       updateData.status = 'pending_update';
       statusMessage = "Appointment update request sent to doctor for approval";
-      
+
       // Store the previous values for reference
       updateData.previousDate = currentAppointment.date;
       updateData.previousTime = currentAppointment.time;
@@ -84,7 +83,7 @@ export async function PUT(req, { params }) {
       updateData,
       { new: true }
     );
-    
+
     // Update time slot status
     await updateSlotFromAppointment(updatedAppointment, 'update');
 
@@ -97,7 +96,7 @@ export async function PUT(req, { params }) {
           // Get user name
           const user = await User.findById(userId, 'name');
           const userName = user ? user.name : 'A patient';
-          
+
           // Create notification
           await Notification.create({
             userId: doctor.userId,
@@ -115,7 +114,7 @@ export async function PUT(req, { params }) {
               patientId: userId
             }
           });
-          
+
           console.log(`Created notification for doctor ${doctor.userId} about appointment reschedule request`);
         }
       } catch (error) {
@@ -125,9 +124,9 @@ export async function PUT(req, { params }) {
     }
 
     console.log("✅ Appointment updated successfully:", updatedAppointment);
-    return NextResponse.json({ 
-      message: statusMessage, 
-      appointment: updatedAppointment 
+    return NextResponse.json({
+      message: statusMessage,
+      appointment: updatedAppointment
     }, { status: 200 });
 
   } catch (error) {
@@ -162,7 +161,7 @@ export async function DELETE(req, { params }) {
 
     // Get ID from URL
     const { id } = params;
-    
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid appointment ID" }, { status: 400 });
     }
@@ -170,9 +169,9 @@ export async function DELETE(req, { params }) {
     console.log(`Deleting appointment with ID: ${id} for user: ${userId}`);
 
     // Find and delete appointment (only if it belongs to the authenticated user)
-    const deletedAppointment = await Appointment.findOneAndDelete({ 
-      _id: id, 
-      userId 
+    const deletedAppointment = await Appointment.findOneAndDelete({
+      _id: id,
+      userId
     });
 
     if (!deletedAppointment) {
@@ -183,63 +182,66 @@ export async function DELETE(req, { params }) {
     await updateSlotFromAppointment(deletedAppointment, 'delete');
 
     console.log("Appointment deleted successfully:", deletedAppointment);
-    
-    return NextResponse.json({ 
+
+    return NextResponse.json({
       message: "Appointment deleted successfully!",
       appointmentId: id
     }, { status: 200 });
 
   } catch (error) {
     console.error("Server Error:", error);
-    return NextResponse.json({ 
-      error: "Server error", 
-      details: error.message 
+    return NextResponse.json({
+      error: "Server error",
+      details: error.message
     }, { status: 500 });
   }
 }
 
 export async function GET(request, { params }) {
   try {
+    // Await params (Next.js 15 requirement)
+    const { id } = await params;
+
     const token = request.headers.get('authorization')?.split(' ')[1];
-    
+
     if (!token) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
-    
+
     // Verify token
     const decoded = await verifyJwtToken(token);
     if (!decoded) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
-    
-    await connectToDatabase();
-    
-    // Find the appointment by ID
-    const appointment = await Appointment.findById(params.id)
-      .populate('patient', 'firstName lastName email')
-      .populate('doctor', 'firstName lastName email specialization');
-    
+
+    await connectDB();
+
+    // Find the appointment by ID (userId is the patient, not 'patient')
+    const appointment = await Appointment.findById(id)
+      .populate('userId', 'name email')
+      .populate('doctor');
+
     if (!appointment) {
       return NextResponse.json({ message: 'Appointment not found' }, { status: 404 });
     }
-    
+
     // Check if the user has permission to view this appointment
     const userId = decoded.userId;
     const user = await User.findById(userId);
-    
+
     if (!user) {
       return NextResponse.json({ message: 'User not found' }, { status: 404 });
     }
-    
+
     // Only allow access if the user is an admin, the patient, or the doctor of this appointment
     if (
-      user.role !== 'admin' && 
-      appointment.patient._id.toString() !== userId && 
+      user.role !== 'admin' &&
+      appointment.patient._id.toString() !== userId &&
       appointment.doctor._id.toString() !== userId
     ) {
       return NextResponse.json({ message: 'Unauthorized to view this appointment' }, { status: 403 });
     }
-    
+
     return NextResponse.json(appointment);
   } catch (error) {
     console.error('Error fetching appointment:', error);

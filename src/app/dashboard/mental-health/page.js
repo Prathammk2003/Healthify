@@ -31,7 +31,7 @@ export default function MentalHealth() {
     const userId = localStorage.getItem('userId');
     if (userId) {
       setFormData((prevData) => ({ ...prevData, userId }));
-      
+
       // Fetch previous data
       const fetchProgress = async () => {
         try {
@@ -46,7 +46,7 @@ export default function MentalHealth() {
           setIsLoadingData(false);
         }
       };
-      
+
       fetchProgress();
     } else {
       setIsLoadingData(false);
@@ -62,7 +62,7 @@ export default function MentalHealth() {
     e.preventDefault();
     setLoading(true);
     setErrorMessage('');
-    
+
     try {
       const res = await fetch('/api/mentalhealth/data', {
         method: 'POST',
@@ -74,14 +74,14 @@ export default function MentalHealth() {
       if (res.ok) {
         setRecommendation(data.recommendation);
         setErrorMessage('');
-        
+
         // Refresh progress data
         const progressRes = await fetch(`/api/mentalhealth/progress?userId=${formData.userId}`);
         if (progressRes.ok) {
           const progressData = await progressRes.json();
           setProgressData(progressData || []);
         }
-        
+
         // Reset form values except userId
         const userId = formData.userId;
         setFormData({
@@ -122,13 +122,13 @@ export default function MentalHealth() {
 
     if (progressData.length > 0) {
       const ctx = document.getElementById('progressChart');
-      
+
       if (ctx) {
         // Clear any existing chart
         if (ctx.chart) {
           ctx.chart.destroy();
         }
-        
+
         // Create a new chart
         ctx.chart = new Chart(ctx, {
           type: 'line',
@@ -279,9 +279,11 @@ export default function MentalHealth() {
                 name="sleepHours"
                 min="0"
                 max="24"
+                step="0.5"
                 value={formData.sleepHours}
                 onChange={handleChange}
                 className="form-input"
+                placeholder="e.g., 7.5"
                 required
               />
             </div>
@@ -305,8 +307,27 @@ export default function MentalHealth() {
               <p className="text-center font-medium">{formData.anxiety}</p>
             </div>
 
+            <div className="space-y-4">
+              <label className="form-label">Energy Level (0-10)</label>
+              <input
+                type="range"
+                name="energyLevel"
+                min="0"
+                max="10"
+                value={formData.energyLevel}
+                onChange={handleChange}
+                className="w-full"
+                required
+              />
+              <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                <span>Very Low</span>
+                <span>Very High</span>
+              </div>
+              <p className="text-center font-medium">{formData.energyLevel}</p>
+            </div>
+
             <div>
-              <label className="form-label">Additional Thoughts</label>
+              <label className="form-label">Additional Thoughts (Optional)</label>
               <textarea
                 name="thoughts"
                 value={formData.thoughts}
@@ -342,7 +363,7 @@ export default function MentalHealth() {
                 <h2 className="text-2xl font-semibold gradient-heading">Personal Insights</h2>
                 <Brain className="h-6 w-6 text-blue-500 animate-pulse-slow" />
               </div>
-              
+
               <div className="space-y-3 p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl">
                 {getRecommendationBullets().map((bullet, index) => (
                   <div key={index} className="flex">
@@ -379,7 +400,7 @@ export default function MentalHealth() {
             {!isLoadingData && progressData.length > 0 && (
               <div className="space-y-4 mt-4">
                 <h3 className="text-xl font-semibold">Latest Stats</h3>
-                
+
                 {/* Stress Level */}
                 <div className="space-y-2">
                   <div className="flex justify-between">
@@ -387,13 +408,13 @@ export default function MentalHealth() {
                     <span className="text-sm text-blue-700 dark:text-blue-300">{progressData[0]?.stressLevel}/10</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                    <div 
-                      className="bg-gradient-to-r from-blue-400 to-blue-600 h-2.5 rounded-full neon-glow" 
+                    <div
+                      className="bg-gradient-to-r from-blue-400 to-blue-600 h-2.5 rounded-full neon-glow"
                       style={{ width: `${(progressData[0]?.stressLevel / 10) * 100}%` }}
                     ></div>
                   </div>
                 </div>
-                
+
                 {/* Sleep Quality */}
                 <div className="space-y-2">
                   <div className="flex justify-between">
@@ -401,8 +422,8 @@ export default function MentalHealth() {
                     <span className="text-sm text-green-700 dark:text-green-300">{progressData[0]?.sleepHours} hours</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                    <div 
-                      className="bg-gradient-to-r from-green-400 to-green-600 h-2.5 rounded-full neon-glow" 
+                    <div
+                      className="bg-gradient-to-r from-green-400 to-green-600 h-2.5 rounded-full neon-glow"
                       style={{ width: `${(progressData[0]?.sleepHours / 10) * 100}%` }}
                     ></div>
                   </div>

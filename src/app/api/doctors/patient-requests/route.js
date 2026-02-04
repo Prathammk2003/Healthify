@@ -3,9 +3,10 @@ import PatientRequest from '@/models/PatientRequest';
 import User from '@/models/User';
 import Doctor from '@/models/Doctor';
 import UserProfile from '@/models/UserProfile';
-import jwt from 'jsonwebtoken';
+// Removed direct jwt import since we're using validateJWT
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
+import { validateJWT } from '@/lib/auth-utils'; // Added validateJWT import
 
 // GET endpoint to fetch pending patient requests for a doctor
 export async function GET(req) {
@@ -13,32 +14,39 @@ export async function GET(req) {
     await connectDB();
     console.log('Fetching doctor patient requests');
 
-    // Get the authorization header
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Validate authentication using our utility function
+    const user = await validateJWT(req);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Extract and verify the token
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
     // Find the doctor profile for this user ID
-    const doctorProfile = await Doctor.findOne({ userId: decoded.id });
+    let doctorProfile = await Doctor.findOne({ userId: user._id });
+    
+    // If no doctor profile exists and the user is a doctor, create one
+    if (!doctorProfile && user.role === 'doctor') {
+      console.log(`Creating new doctor profile for user ${user._id}`);
+      doctorProfile = new Doctor({ 
+        userId: user._id,
+        specialization: 'General Physician',
+        patients: []
+      });
+      await doctorProfile.save();
+    }
     
     if (!doctorProfile) {
-      console.warn(`Doctor profile not found for user ID: ${decoded.id}`);
+      console.warn(`Doctor profile not found for user ID: ${user._id}`);
       return NextResponse.json({ 
         message: 'No doctor profile found',
         requests: [] 
       });
     }
     
-    console.log(`Found doctor profile with ID: ${doctorProfile._id} for user: ${decoded.id}`);
+    console.log(`Found doctor profile with ID: ${doctorProfile._id} for user: ${user._id}`);
 
     // Find all pending requests for this doctor
     const requests = await PatientRequest.find({ 
-      doctorId: decoded.id,  // Using the user ID as the doctor ID
+      doctorId: user._id,  // Using the user ID as the doctor ID
       status: 'pending'
     });
 
@@ -62,19 +70,14 @@ export async function PUT(req) {
   try {
     await connectDB();
 
-    // Get the authorization header
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Validate authentication using our utility function
+    const user = await validateJWT(req);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Extract and verify the token
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
     // Ensure the user is a doctor
-    const user = await User.findById(decoded.id);
-    if (!user || user.role !== 'doctor') {
+    if (user.role !== 'doctor') {
       return NextResponse.json({ error: 'Unauthorized - doctors only' }, { status: 403 });
     }
 
@@ -93,7 +96,7 @@ export async function PUT(req) {
     }
     
     // Make sure the doctor owns this request
-    if (request.doctorId.toString() !== decoded.id) {
+    if (request.doctorId.toString() !== user._id.toString()) {
       return NextResponse.json({ error: 'Not authorized to update this request' }, { status: 403 });
     }
 
@@ -107,16 +110,18 @@ export async function PUT(req) {
       
       try {
         // Find or create doctor profile
-        let doctorProfile = await Doctor.findOne({ userId: decoded.id });
+        let doctorProfile = await Doctor.findOne({ userId: user._id });
         
+        // If no doctor profile exists, create one
         if (!doctorProfile) {
-          console.log(`Creating doctor profile for user ID: ${decoded.id}`);
+          console.log(`Creating doctor profile for user ID: ${user._id}`);
           doctorProfile = new Doctor({
-            userId: decoded.id,
+            userId: user._id,
             specialization: 'General',
             patients: [],
             availability: []
           });
+          await doctorProfile.save();
         }
         
         // Find patient profile
@@ -156,4 +161,4 @@ export async function PUT(req) {
     console.error('Update patient request error:', error);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
-} 
+}

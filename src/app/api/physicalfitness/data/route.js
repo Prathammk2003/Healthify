@@ -3,8 +3,9 @@ import { connectDB } from '@/lib/mongodb';
 import PhysicalFitness from '@/models/PhysicalFitness';
 import axios from 'axios';
 
-const HUGGING_FACE_API_URL = 'https://api-inference.huggingface.co/models/gpt2'; // Replace with your model ID
-const HUGGING_FACE_API_KEY = process.env.HUGGING_FACE_API_KEY;
+// Using Ollama instead of Hugging Face API
+const OLLAMA_API_URL = process.env.OLLAMA_HOST || 'http://localhost:11434/api/generate';
+const OLLAMA_MODEL = process.env.OLLAMA_TEXT_MODEL || 'llama3.2:3b';
 
 export async function POST(request) {
   try {
@@ -14,19 +15,20 @@ export async function POST(request) {
     const newRecord = new PhysicalFitness(body);
     await newRecord.save();
 
-    // Generate AI recommendation
+    // Generate AI recommendation using Ollama
     const prompt = `The user has exercised for ${body.exerciseHours} hours, consumed ${body.calories} calories, and slept for ${body.sleepHours} hours. Provide a recommendation.`;
 
-    const aiResponse = await axios.post(HUGGING_FACE_API_URL, {
-      inputs: prompt,
+    const aiResponse = await axios.post(OLLAMA_API_URL, {
+      model: OLLAMA_MODEL,
+      prompt: prompt,
+      stream: false
     }, {
       headers: {
-        'Authorization': `Bearer ${HUGGING_FACE_API_KEY}`,
         'Content-Type': 'application/json',
       },
     });
 
-    const recommendation = aiResponse.data[0].generated_text.trim();
+    const recommendation = aiResponse.data.response?.trim() || 'No recommendation available';
 
     return NextResponse.json({
       message: 'Data saved successfully',

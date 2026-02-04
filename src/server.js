@@ -7,6 +7,8 @@ import { connectDB } from './lib/db.js';
 import { startAllSchedulers, manuallyCheckReminders, isSchedulerRunning } from './scheduler/index.js';
 import fs from 'fs';
 import mongoose from 'mongoose';
+import { modelLoader } from './lib/model-loader.js';
+import { medicalAnalysisPipeline } from './lib/medical-analysis-pipeline.js';
 
 // Setup environment
 const __filename = fileURLToPath(import.meta.url);
@@ -96,6 +98,24 @@ const removeSessionsFlag = () => {
     await connectDB();
     console.log('✅ Connected to MongoDB');
     
+    // Initialize medical analysis pipeline
+    try {
+      console.log('Initializing medical analysis pipeline...');
+      await medicalAnalysisPipeline.initialize();
+      console.log('✅ Medical analysis pipeline initialized successfully');
+    } catch (initError) {
+      console.error('❌ Failed to initialize medical analysis pipeline:', initError);
+    }
+    
+    // Initialize ONNX model loader
+    try {
+      console.log('Initializing ONNX model loader...');
+      const modelsLoaded = await modelLoader.loadAllModels();
+      console.log(`✅ ONNX model loader initialized: ${modelsLoaded ? 'Models loaded' : 'No models found'}`);
+    } catch (modelError) {
+      console.error('❌ Failed to initialize ONNX model loader:', modelError);
+    }
+    
     // Create sessions flag on startup
     createSessionsFlag();
     
@@ -114,7 +134,9 @@ const removeSessionsFlag = () => {
         status: 'ok', 
         message: 'Scheduler service is running',
         mongoDbConnected: mongoose.connection.readyState === 1,
-        schedulerActive: isSchedulerRunning 
+        schedulerActive: isSchedulerRunning,
+        modelsLoaded: modelLoader.isLoaded,
+        loadedModels: modelLoader.getModelInfo()
       });
     });
     

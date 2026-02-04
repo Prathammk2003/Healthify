@@ -1,7 +1,7 @@
 import { connectDB } from '@/lib/db';
 import User from '@/models/User';
 import { NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
+import { validateJWT } from '@/lib/auth-utils';
 
 export async function verifyAdmin(req) {
   try {
@@ -10,8 +10,27 @@ export async function verifyAdmin(req) {
 
     if (!token) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
+    // Create a mock request object for validateJWT
+    const mockReq = {
+      headers: {
+        get: (name) => {
+          if (name.toLowerCase() === 'authorization') {
+            return `Bearer ${token}`;
+          }
+          return null;
+        }
+      },
+      cookies: {
+        get: (name) => {
+          if (name === 'token') {
+            return { value: token };
+          }
+          return null;
+        }
+      }
+    };
+
+    const user = await validateJWT(mockReq);
 
     if (!user || !user.isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
